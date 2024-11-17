@@ -1,4 +1,4 @@
 .DS_Store
-chores/.env
-chores/__pycache__/
-tests/__pycache__/
+.env
+__pycache__/
+data
