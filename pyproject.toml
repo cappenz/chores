@@ -1,18 +1,10 @@
-[tool.poetry]
+[project]
 name = "chores"
 version = "0.1.0"
-description = ""
-authors = ["cappenz <charlotte@appenzeller.net>"]
+description = "Add your description here"
 readme = "README.md"
-
-[tool.poetry.dependencies]
-python = "^3.12"
-vapi-python = "^0.1.9"
-openai = "^1.45.0"
-discord-py = "^2.4.0"
-python-dotenv = "^1.0.1"
-
-
-[build-system]
-requires = ["poetry-core"]
-build-backend = "poetry.core.masonry.api"
+requires-python = ">=3.13"
+dependencies = [
+    "audioop-lts>=0.2.1",
+    "discord>=2.3.2",
+]
