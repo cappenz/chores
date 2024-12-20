@@ -34,18 +34,21 @@ async def on_message(message):
         if chores.dishwasher_status >= len(chore_people):
             chores.dishwasher_status = 0
         await message.channel.send(f"It's {chore_people[chores.dishwasher_status]}'s turn to do the dishwasher")
+        chores.make_intro("dishwasher", chores.chore_people[chores.dishwasher_status])
 
     elif 'wednesday'in message.content.lower() or 'outside' in message.content.lower():
         chores.wednesday_status = chores.wednesday_status + 1
         if chores.wednesday_status >= len(chore_people):
             chores.wednesday_status = 0
         await message.channel.send(f"It's {chore_people[chores.wednesday_status]}'s turn to do Wednesday trash")
+        chores.make_intro("wednesday trash", chores.chore_people[chores.wednesday_status])
 
     elif 'kitchen' in message.content.lower():
         chores.kitchen_status = chores.kitchen_status + 1
         if chores.kitchen_status >= len(chore_people):
             chores.kitchen_status = 0
         await message.channel.send(f"It's {chore_people[chores.kitchen_status]}'s turn to do kitchen trash")
+        chores.make_intro("kitchen trash", chores.chore_people[chores.kitchen_status])
 
     elif 'info'in message.content.lower() or 'status' in message.content.lower():
         await message.channel.send(f"It's {chore_people[chores.dishwasher_status]}'s turn to do the dishwasher,\n"

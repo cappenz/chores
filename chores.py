@@ -2,6 +2,9 @@ import tkinter as tk
 import os
 import datetime
 import json
+from openai import OpenAI
+
+open_ai_key = os.getenv("OPENAI_API_KEY")
 
 from chores_bot import run_chores_bot
 
@@ -24,10 +27,10 @@ class ChoreStatus:
 
         self.window = window
         self.labels = [
-            tk.Label(window, text=f"Dishwasher", font=('Arial', 30, 'normal')),
-            tk.Label(window, text=f"Kitchen Trash", font=('Arial', 30, 'normal')),
-            tk.Label(window, text=f"Wednesday Trash", font=('Arial', 30, 'normal')),
-            tk.Label(window, text=f"Today is ...", font=('Arial', 30, 'normal')),
+            tk.Label(window, text=f"Dishwasher", font=('Arial', 60, 'normal')),
+            tk.Label(window, text=f"Kitchen Trash", font=('Arial', 60, 'normal')),
+            tk.Label(window, text=f"Wednesday Trash", font=('Arial', 60, 'normal')),
+            tk.Label(window, text=f"Today is ...", font=('Arial', 60, 'normal')),
         ]
         # Make the time in the top left and everything else centered below
         self.labels[3].pack(anchor="center", pady=(0, 20))  # Time label at the top left
@@ -35,6 +38,18 @@ class ChoreStatus:
             label.pack(pady=20, anchor="center")  # Center the other labels below
 
         self.refresh_labels()
+
+    #ask gpt for a short intro, which intros whoevers name is next too
+    def make_intro(self, chore_name, chore_person):
+        # Check if the dishwasher status has changed
+        client = OpenAI()
+        
+        intro_prompt = f"Announce the fact that {chore_person} has to do the {chore_name} chore today."
+        completion = client.chat.completions.create(
+            model="gpt-4", 
+            messages=[{"role": "user", "content": intro_prompt}]
+        )
+        print(completion.choices[0].message.content)
 
     # Load the three statuses from file
     def load_status(self):
