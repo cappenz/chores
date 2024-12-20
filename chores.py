@@ -2,6 +2,8 @@ import tkinter as tk
 import os
 import datetime
 import json
+from elevenlabs import play
+from elevenlabs.client import ElevenLabs
 from openai import OpenAI
 
 open_ai_key = os.getenv("OPENAI_API_KEY")
@@ -38,6 +40,18 @@ class ChoreStatus:
             label.pack(pady=20, anchor="center")  # Center the other labels below
 
         self.refresh_labels()
+
+    # Say text via eleven labs
+    def say_text(self, announcement):
+        api_key = os.getenv("ELEVENLABS_API_KEY")
+        client = ElevenLabs(api_key=api_key)
+
+        audio = client.generate(
+        text=announcement,
+        voice="Brian",
+        model="eleven_multilingual_v2"
+        )
+        play(audio)
 
     #ask gpt for a short intro, which intros whoevers name is next too
     def make_intro(self, chore_name, chore_person):
