@@ -7,4 +7,5 @@ requires-python = ">=3.13"
 dependencies = [
     "audioop-lts>=0.2.1",
     "discord>=2.3.2",
+    "elevenlabs>=1.50.3",
 ]
