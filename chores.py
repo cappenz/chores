@@ -64,6 +64,7 @@ class ChoreStatus:
             messages=[{"role": "user", "content": intro_prompt}]
         )
         print(completion.choices[0].message.content)
+        self.say_text(completion.choices[0].message.content)
 
     # Load the three statuses from file
     def load_status(self):
