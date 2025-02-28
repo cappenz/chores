@@ -8,3 +8,4 @@ Then run the chores app with:
 ```
 uv run --env-file .env python3 chores.py
 ```
+ 
