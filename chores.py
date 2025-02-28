@@ -96,8 +96,8 @@ class ChoreStatus:
         kitchen_name = ChoreStatus.chore_people[self.kitchen_status]
         wednesday_name = ChoreStatus.chore_people[self.wednesday_status]
         self.labels[0].config(text=f"🍽️ Dishwasher: {dishwasher_name}")
-        self.labels[1].config(text=f"🗑️ Kitchen Trash: {kitchen_name}")
-        self.labels[2].config(text=f"🌳 Wednesday Trash: {wednesday_name}")
+        self.labels[1].config(text=f"🗑️ The Trash : {kitchen_name}")
+        self.labels[2].config(text=f"🌳 Wed Trash : {wednesday_name}")
         self.labels[3].config(text=f"Today is {datetime.datetime.now().strftime('%a, %b %d, %H:%M:%S')}")
 
     # Update the status - who has what chore
