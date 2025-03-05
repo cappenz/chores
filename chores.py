@@ -169,7 +169,7 @@ class ChoreStatus:
         # Check if the dishwasher status has changed
         client = OpenAI()
         
-        intro_prompt = f"Announce the fact that {chore_person} has to do the {chore_name} chore today."
+        intro_prompt = f"Announce the fact that {chore_person} has to do the {chore_name} chore today, and somehow find a funny way to mention horses as part of the announcement."
         completion = client.chat.completions.create(
             model="gpt-4", 
             messages=[{"role": "user", "content": intro_prompt}]
