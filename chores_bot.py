@@ -77,9 +77,6 @@ def run_chores_bot(window_arg, chores_arg):
     window = window_arg
     chores = chores_arg
     
-    # Set window to fullscreen mode
-    window.wm_attributes('-fullscreen', True)
-    
     window.update_idletasks()
     window.update()
     client.run(token)
