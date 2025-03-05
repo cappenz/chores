@@ -9,5 +9,6 @@ dependencies = [
     "discord>=2.3.2",
     "elevenlabs>=1.50.3",
     "openai>=1.58.1",
+    "pillow>=11.1.0",
     "pytest>=8.3.4",
 ]
