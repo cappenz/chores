@@ -207,7 +207,17 @@ class ChoreStatus:
         kitchen_name = ChoreStatus.chore_people[self.kitchen_status]
         wednesday_name = ChoreStatus.chore_people[self.wednesday_status]
         
-        self.time_label.config(text=f"Today is {datetime.datetime.now().strftime('%a, %b %d, %H:%M:%S')}")
+        # Format date in Japanese style with Kanji for year, month, day
+        now = datetime.datetime.now()
+        year = now.year
+        month = now.month
+        day = now.day
+        hour = now.hour
+        minute = now.minute
+        second = now.second
+        japanese_date = f"{year}年{month}月{day}日 {hour}時{minute}分{second}秒"
+        
+        self.time_label.config(text=japanese_date)
         
         # Update names
         self.chore_names[0].config(text=dishwasher_name)
