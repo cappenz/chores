@@ -31,9 +31,6 @@ class ChoreStatus:
         self.window = window
         window.configure(bg="#f5f5f5")  # Light gray background
         
-        # Set up a timer to refresh the time display every second
-        self.update_timer = None
-        
         # Create a main frame to hold everything
         main_frame = tk.Frame(window, bg="#f5f5f5", padx=40, pady=30)
         main_frame.pack(expand=True, fill="both")
@@ -46,7 +43,7 @@ class ChoreStatus:
             bg="#f5f5f5",
             fg="#333333"
         )
-        self.time_label.pack(anchor="center", pady=(20, 40))
+        self.time_label.pack(anchor="center", pady=(0, 60))
         
         # Create a horizontal frame for the chores with proper spacing
         chores_row = tk.Frame(main_frame, bg="#f5f5f5")
@@ -113,9 +110,6 @@ class ChoreStatus:
             self.chore_names.append(name_label)
         
         self.refresh_labels()
-        
-        # Start the timer to update the time every second
-        self.update_time()
 
     # Load all person images
     def load_person_images(self):
@@ -213,10 +207,7 @@ class ChoreStatus:
         kitchen_name = ChoreStatus.chore_people[self.kitchen_status]
         wednesday_name = ChoreStatus.chore_people[self.wednesday_status]
         
-        now = datetime.datetime.now()
-        # Format date using western year with Japanese Kanji characters for units
-        formatted_date = f"{now.year}年{now.month}月{now.day}日 {now.hour}時{now.minute}分{now.second}秒"
-        self.time_label.config(text=formatted_date)
+        self.time_label.config(text=f"Today is {datetime.datetime.now().strftime('%a, %b %d, %H:%M:%S')}")
         
         # Update names
         self.chore_names[0].config(text=dishwasher_name)
@@ -228,12 +219,6 @@ class ChoreStatus:
         self.chore_images[1].config(image=self.chore_photos[kitchen_name.lower()])
         self.chore_images[2].config(image=self.chore_photos[wednesday_name.lower()])
 
-    # Update the time display and schedule the next update
-    def update_time(self):
-        self.refresh_labels()
-        # Schedule the next update in 1 second
-        self.update_timer = self.window.after(1000, self.update_time)
-    
     # Update the status - who has what chore
     def update_labels(self, dishwasher_status, kitchen_status, wednesday_status):
         self.dishwasher_status = dishwasher_status
