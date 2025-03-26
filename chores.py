@@ -117,7 +117,7 @@ class ChoreStatus:
             person_lower = person.lower()
             try:
                 # Open the image file with the correct path
-                image_path = f"data/{person_lower}.jpg"
+                image_path = f"data/{person_lower}.png"
                 image = Image.open(image_path)
                 
                 # Crop the image to a square (centered)
