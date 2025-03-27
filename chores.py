@@ -43,7 +43,7 @@ class ChoreStatus:
             bg="#f5f5f5",
             fg="#333333"
         )
-        self.time_label.pack(anchor="center", pady=(0, 60))
+        self.time_label.pack(anchor="center", pady=(0, 100))
         
         # Create a horizontal frame for the chores with proper spacing
         chores_row = tk.Frame(main_frame, bg="#f5f5f5")
