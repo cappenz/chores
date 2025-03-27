@@ -32,7 +32,7 @@ class ChoreStatus:
         window.configure(bg="#f5f5f5")  # Light gray background
         
         # Create a main frame to hold everything
-        main_frame = tk.Frame(window, bg="#f5f5f5", padx=40, pady=100)
+        main_frame = tk.Frame(window, bg="#f5f5f5", padx=40, pady=70)
         main_frame.pack(expand=True, fill="both")
         
         # Date/time display at the top
@@ -43,7 +43,7 @@ class ChoreStatus:
             bg="#f5f5f5",
             fg="#333333"
         )
-        self.time_label.pack(anchor="center", pady=(0, 10000))
+        self.time_label.pack(anchor="center", pady=(0, 100))
         
         # Create a horizontal frame for the chores with proper spacing
         chores_row = tk.Frame(main_frame, bg="#f5f5f5")
