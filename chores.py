@@ -216,7 +216,7 @@ class ChoreStatus:
         minute = now.minute
         second = now.second
         # japanese_date = f"{year}年{month}月{day}日 {hour}時{minute}分{second}秒"
-        holloween_date = f"🎃 {day}/{Month}/{year} 🎃 {hour}:{minute}:{second} 🎃"
+        holloween_date = f"🎃 {day}/{month}/{year} 🎃 {hour}:{minute}:{second} 🎃"
         
         self.time_label.config(text=holloween_date)
         
