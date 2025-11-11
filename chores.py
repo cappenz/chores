@@ -117,7 +117,7 @@ class ChoreStatus:
             person_lower = person.lower()
             try:
                 # Open the image file with the correct path
-                image_path = f"data/{person_lower}.png"
+                image_path = f"data/{person_lower}(ghibli).png"
                 image = Image.open(image_path)
                 
                 # Crop the image to a square (centered)
@@ -169,7 +169,7 @@ class ChoreStatus:
         # Check if the dishwasher status has changed
         client = OpenAI()
         
-        intro_prompt = f"Announce the fact that {chore_person} has to do the {chore_name} chore today. Find a fun way to talk about holloween/october and make it short."
+        intro_prompt = f"Announce the fact that {chore_person} has to do the {chore_name} chore today. Compoase a very short speech composing of only the word turkey and once mention the chore and who has to do it"
         completion = client.chat.completions.create(
             model="gpt-4", 
             messages=[{"role": "user", "content": intro_prompt}]
