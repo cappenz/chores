@@ -1,12 +1,14 @@
 import tkinter as tk
 import datetime
 from PIL import Image, ImageTk
-from chores import ChoreStatus
+from chores import ChoresApp
+
+# Class that handles the UI for the chores app. Uses Tk.
 
 class ChoresUI:
 
-    def __init__(self, window, chore_status: ChoreStatus):
-        self.chore_status = chore_status
+    def __init__(self, window, chores_app: ChoresApp):
+        self.chores_app = chores_app
         self.window = window
         window.configure(bg="#f5f5f5")
         
@@ -38,12 +40,12 @@ class ChoresUI:
         self.load_person_images()
         
         chore_data = [
-            ("🍽️ Dishwasher", self.chore_status.dishwasher_status),
-            ("🗑️ Kitchen Trash", self.chore_status.kitchen_status),
-            ("🌳 Wed Trash", self.chore_status.wednesday_status)
+            ("🍽️ Dishwasher", self.chores_app.state.dishwasher_status, "dish"),
+            ("🗑️ Kitchen Trash", self.chores_app.state.kitchen_status, "kitchen"),
+            ("🌳 Wed Trash", self.chores_app.state.wednesday_status, "wednesday")
         ]
         
-        for i, (chore_name, status) in enumerate(chore_data):
+        for i, (chore_name, status, chore_keyword) in enumerate(chore_data):
             chore_frame = tk.Frame(chores_row, bg="#f5f5f5")
             chore_frame.grid(row=0, column=i, sticky="nsew")
             self.chore_frames.append(chore_frame)
@@ -58,18 +60,20 @@ class ChoresUI:
             title_label.pack(pady=(0, 15))
             self.chore_titles.append(title_label)
             
-            person_name = ChoreStatus.chore_people[status].lower()
+            person_name = ChoresApp.chore_people[status].lower()
             image_label = tk.Label(
                 chore_frame,
                 image=self.chore_photos[person_name],
-                bg="#f5f5f5"
+                bg="#f5f5f5",
+                cursor="hand2"
             )
             image_label.pack(pady=(0, 10))
+            image_label.bind("<Button-1>", self._make_click_handler(chore_keyword))
             self.chore_images.append(image_label)
             
             name_label = tk.Label(
                 chore_frame,
-                text=ChoreStatus.chore_people[status],
+                text=ChoresApp.chore_people[status],
                 font=('Helvetica', 30, 'normal'),
                 bg="#f5f5f5",
                 fg="#000000"
@@ -94,7 +98,7 @@ class ChoresUI:
         self.refresh_labels()
 
     def load_person_images(self):
-        for person in ChoreStatus.chore_people:
+        for person in ChoresApp.chore_people:
             person_lower = person.lower()
             try:
                 image_path = f"data/{person_lower}(ghibli).png"
@@ -123,9 +127,9 @@ class ChoresUI:
                 self.chore_photos[person_lower] = ImageTk.PhotoImage(fallback)
 
     def refresh_labels(self):
-        dishwasher_name = ChoreStatus.chore_people[self.chore_status.dishwasher_status]
-        kitchen_name = ChoreStatus.chore_people[self.chore_status.kitchen_status]
-        wednesday_name = ChoreStatus.chore_people[self.chore_status.wednesday_status]
+        dishwasher_name = ChoresApp.chore_people[self.chores_app.state.dishwasher_status]
+        kitchen_name = ChoresApp.chore_people[self.chores_app.state.kitchen_status]
+        wednesday_name = ChoresApp.chore_people[self.chores_app.state.wednesday_status]
         
         now = datetime.datetime.now()
         year = now.year
@@ -146,9 +150,18 @@ class ChoresUI:
         self.chore_images[1].config(image=self.chore_photos[kitchen_name.lower()])
         self.chore_images[2].config(image=self.chore_photos[wednesday_name.lower()])
 
+    def _make_click_handler(self, chore_keyword: str):
+        def handler(event):
+            self.on_image_click(chore_keyword)
+        return handler
+
+    def on_image_click(self, chore_keyword: str):
+        if self.chores_app.chores_bot:
+            self.chores_app.chores_bot.schedule_on_message(chore_keyword)
+
     def toggle_audio(self):
-        self.chore_status.audio_enabled = not self.chore_status.audio_enabled
-        if self.chore_status.audio_enabled:
+        self.chores_app.audio_enabled = not self.chores_app.audio_enabled
+        if self.chores_app.audio_enabled:
             self.audio_button.config(text="🔊")
         else:
             self.audio_button.config(text="🔇")

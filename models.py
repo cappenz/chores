@@ -1,4 +1,5 @@
 import os
+import asyncio
 from elevenlabs import play
 from elevenlabs.client import ElevenLabs
 from openai import OpenAI
@@ -23,4 +24,11 @@ def generate_audio(text: str) -> None:
         model="eleven_multilingual_v2"
     )
     play(audio)
+
+async def generate_and_play_audio_async(chore_name: str, chore_person: str) -> None:
+    try:
+        speech = await asyncio.to_thread(generate_speech, chore_name, chore_person)
+        await asyncio.to_thread(generate_audio, speech)
+    except Exception as e:
+        print(f"Error generating or playing audio: {e}")
 

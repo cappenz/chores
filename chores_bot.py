@@ -1,12 +1,15 @@
 import discord
 from discord.ext import tasks
 import os
-from chores import ChoreStatus
+from chores import ChoresApp
 
 token = os.getenv("DISCORD_TOKEN")
 if token is None:
     print("No token found")
     exit()
+
+
+# This class handles the Discord bot.
 
 class ChoresBot:
 
@@ -18,8 +21,8 @@ class ChoresBot:
         "Thomas,<@869351880155885600>"
     ]
 
-    def __init__(self, chore_status: ChoreStatus):
-        self.chore_status = chore_status
+    def __init__(self, chores_app: ChoresApp):
+        self.chores_app = chores_app
         self.last_channel = None
         intents = discord.Intents.default()
         intents.message_content = True
@@ -32,20 +35,30 @@ class ChoresBot:
             if not self.myLoop.is_running():
                 self.myLoop.start()
             print(f'We have logged in as {self.client.user}')
+            if self.last_channel is None:
+                for guild in self.client.guilds:
+                    if guild.name == "Appenzellers":
+                        for channel in guild.text_channels:
+                            if channel.permissions_for(guild.me).send_messages:
+                                self.last_channel = channel
+                                print(f'Set default channel to: {channel.name} in {guild.name}')
+                                break
+                        if self.last_channel:
+                            break
 
         @self.client.event
         async def on_message(message):
             if message.author == self.client.user:
                 return
             self.last_channel = message.channel
-            await self.chore_status.on_message(message.content)
+            await self.chores_app.on_message(message.content)
 
         @tasks.loop(seconds=0.05)
         async def myLoop():
-            if self.chore_status.chores_ui:
-                self.chore_status.chores_ui.window.update_idletasks()
-                self.chore_status.chores_ui.refresh_labels()
-                self.chore_status.chores_ui.window.update()
+            if self.chores_app.chores_ui:
+                self.chores_app.chores_ui.window.update_idletasks()
+                self.chores_app.chores_ui.refresh_labels()
+                self.chores_app.chores_ui.window.update()
         
         self.myLoop = myLoop
 
@@ -54,10 +67,19 @@ class ChoresBot:
             await self.last_channel.send(message)
 
     def refresh_ui(self):
-        if self.chore_status.chores_ui:
-            self.chore_status.chores_ui.refresh_labels()
-            self.chore_status.chores_ui.window.update_idletasks()
-            self.chore_status.chores_ui.window.update()
+        if self.chores_app.chores_ui:
+            self.chores_app.chores_ui.refresh_labels()
+            self.chores_app.chores_ui.window.update_idletasks()
+            self.chores_app.chores_ui.window.update()
+
+    def schedule_on_message(self, message_content: str):
+        import asyncio
+        loop = self.client.loop
+        if loop and loop.is_running():
+            asyncio.run_coroutine_threadsafe(
+                self.chores_app.on_message(message_content),
+                loop
+            )
 
     def run(self):
         self.client.run(token)
