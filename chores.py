@@ -19,6 +19,7 @@ class ChoreStatus:
         self.dishwasher_status = 0
         self.kitchen_status = 0
         self.wednesday_status = 0
+        self.audio_enabled = True
         self.chores_ui: "ChoresUI | None" = None
         self.chores_bot: "ChoresBot | None" = None
         self.reply_callback: Callable[[str], Awaitable[None]] | None = None
@@ -81,8 +82,9 @@ class ChoreStatus:
             if self.reply_callback:
                 await self.reply_callback(f"It's {ChoresBot.chore_people_discord[new_status]}'s turn to do kitchen trash")
         
-        speech = generate_speech(chore_type, ChoreStatus.chore_people[new_status])
-        generate_audio(speech)
+        if self.audio_enabled:
+            speech = generate_speech(chore_type, ChoreStatus.chore_people[new_status])
+            generate_audio(speech)
         
         if self.ui_refresh_callback:
             self.ui_refresh_callback()

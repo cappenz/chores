@@ -40,7 +40,7 @@ class ChoresBot:
             self.last_channel = message.channel
             await self.chore_status.on_message(message.content)
 
-        @tasks.loop(seconds=1)
+        @tasks.loop(seconds=0.05)
         async def myLoop():
             if self.chore_status.chores_ui:
                 self.chore_status.chores_ui.window.update_idletasks()

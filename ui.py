@@ -77,6 +77,20 @@ class ChoresUI:
             name_label.pack()
             self.chore_names.append(name_label)
         
+        self.audio_button = tk.Button(
+            window,
+            text="🔊",
+            font=('Helvetica', 30),
+            bg="#f5f5f5",
+            fg="#333333",
+            relief=tk.FLAT,
+            borderwidth=0,
+            width=3,
+            height=2,
+            command=self.toggle_audio
+        )
+        self.audio_button.place(relx=1.0, rely=1.0, anchor='se', x=-20, y=-20)
+        
         self.refresh_labels()
 
     def load_person_images(self):
@@ -131,4 +145,12 @@ class ChoresUI:
         self.chore_images[0].config(image=self.chore_photos[dishwasher_name.lower()])
         self.chore_images[1].config(image=self.chore_photos[kitchen_name.lower()])
         self.chore_images[2].config(image=self.chore_photos[wednesday_name.lower()])
+
+    def toggle_audio(self):
+        self.chore_status.audio_enabled = not self.chore_status.audio_enabled
+        if self.chore_status.audio_enabled:
+            self.audio_button.config(text="🔊")
+        else:
+            self.audio_button.config(text="🔇")
+        self.audio_button.update()
 
