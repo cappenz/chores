@@ -6,7 +6,7 @@ from openai import OpenAI
 
 def generate_speech(chore_name: str, chore_person: str) -> str:
     client = OpenAI()
-    intro_prompt = f"Announce the fact that {chore_person} has to do the {chore_name} chore today. Compoase a very very short speech composing of only the word turkey and once mention the chore and who has to do it. And add one thanksgiving related word."
+    intro_prompt = f"Announce the fact that {chore_person} has to do the {chore_name} chore today. Compoase a very very short speech composing of winter holiday or decemeber joke, a the name of who has to do what chore"
     completion = client.chat.completions.create(
         model="gpt-4", 
         messages=[{"role": "user", "content": intro_prompt}]
