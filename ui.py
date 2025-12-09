@@ -138,7 +138,7 @@ class ChoresUI:
         hour = now.hour
         minute = now.minute
         second = now.second
-        holloween_date = f"🦃{day}/{month}/{year} 🦃 {hour}:{minute}:{second} 🦃"
+        holloween_date = f"⛄{day}/{month}/{year} ❄️ {hour}:{minute}:{second} 🎄"
         
         self.time_label.config(text=holloween_date)
         
