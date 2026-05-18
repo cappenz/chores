@@ -132,15 +132,9 @@ class ChoresUI:
         wednesday_name = ChoresApp.chore_people[self.chores_app.state.wednesday_status]
         
         now = datetime.datetime.now()
-        year = now.year
-        month = now.month
-        day = now.day
-        hour = now.hour
-        minute = now.minute
-        second = now.second
-        holloween_date = f"⛄{day}/{month}/{year} ❄️ {hour}:{minute}:{second} 🎄"
+        today = now.strftime("%m/%d/%Y %I:%M:%S %p")
         
-        self.time_label.config(text=holloween_date)
+        self.time_label.config(text=today)
         
         self.chore_names[0].config(text=dishwasher_name)
         self.chore_names[1].config(text=kitchen_name)

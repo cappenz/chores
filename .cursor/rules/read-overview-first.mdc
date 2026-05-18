@@ -1,0 +1,10 @@
+---
+description: Read the project overview spec before working
+alwaysApply: true
+---
+
+# Read The Overview First
+
+Before making code, documentation, or test changes in this repository, read `specs/overview.md` and follow its architecture and testing guidance.
+
+Use `make test` for the regular automated test suite. Do not use `uv run pytest` directly for normal validation.

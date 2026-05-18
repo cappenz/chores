@@ -1,22 +1,56 @@
-import tkinter as tk
-import pytest
-import sys
-import os
+from __future__ import annotations
 
-# Add the parent directory to path to import the chores module
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from chores import ChoresApp
+import asyncio
 
-def test_say_text():
-    """Test the voice announcement functionality."""
-    test_window = tk.Tk()
-    test_chores = ChoresApp()
-    
-    # Note: say_text method doesn't exist in ChoresApp
-    # This test may need to be updated based on actual functionality
-    # test_chores.say_text("This is a test.")
-    
-    test_window.destroy()
-    
-    # No assertion needed as we're just testing if the function runs without errors
-    # In a real test, you might want to mock the ElevenLabs client 
+import models
+
+
+def test_generate_audio_uses_announcement_voice_id(monkeypatch):
+    calls = []
+    audio = [b"fake-audio"]
+
+    class FakeTextToSpeech:
+        def convert(self, *, voice_id: str, text: str, model_id: str):
+            calls.append(("convert", voice_id, text, model_id))
+            return audio
+
+    class FakeElevenLabs:
+        def __init__(self, *, api_key: str | None):
+            calls.append(("client", api_key))
+            self.text_to_speech = FakeTextToSpeech()
+
+    def fake_play(generated_audio):
+        calls.append(("play", generated_audio))
+
+    monkeypatch.setenv("ELEVENLABS_API_KEY", "test-key")
+    monkeypatch.setattr(models, "ElevenLabs", FakeElevenLabs)
+    monkeypatch.setattr(models, "play", fake_play)
+
+    models.generate_audio("Test announcement")
+
+    assert calls == [
+        ("client", "test-key"),
+        ("convert", models.ANNOUNCEMENT_VOICE_ID, "Test announcement", "eleven_multilingual_v2"),
+        ("play", audio),
+    ]
+
+
+def test_audio_orchestration_uses_mocked_generation(monkeypatch):
+    calls = []
+
+    def fake_generate_speech(chore_name: str, chore_person: str) -> str:
+        calls.append(("speech", chore_name, chore_person))
+        return "Test announcement"
+
+    def fake_generate_audio(text: str) -> None:
+        calls.append(("audio", text))
+
+    monkeypatch.setattr(models, "generate_speech", fake_generate_speech)
+    monkeypatch.setattr(models, "generate_audio", fake_generate_audio)
+
+    asyncio.run(models.generate_and_play_audio_async("dishwasher", "Guido"))
+
+    assert calls == [
+        ("speech", "dishwasher", "Guido"),
+        ("audio", "Test announcement"),
+    ]
