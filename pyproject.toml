@@ -12,3 +12,10 @@ dependencies = [
     "pillow>=11.1.0",
     "pytest>=8.3.4",
 ]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+markers = [
+    "manual: explicit manual tests that may use paid services, hardware, or external integrations",
+]
