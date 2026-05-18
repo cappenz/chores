@@ -16,7 +16,7 @@ def test_audio_generation_plays_on_default_speakers():
     if not os.getenv("ELEVENLABS_API_KEY"):
         pytest.skip("ELEVENLABS_API_KEY is required for the manual audio test.")
 
-    from models import generate_audio, generate_speech
+    from core.audio_announcements import generate_audio, generate_speech
 
     speech = generate_speech("dishwasher", "Guido")
 

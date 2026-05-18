@@ -1,7 +1,7 @@
 .PHONY: run test test-audio
 
 run:
-	uv run --env-file .env python3 chores.py
+	uv run --env-file .env python3 kitchen_agent.py
 
 test:
 	uv run pytest -m "not manual" tests

@@ -8,8 +8,11 @@ dependencies = [
     "audioop-lts>=0.2.1",
     "discord>=2.3.2",
     "elevenlabs>=1.50.3",
+    "google-genai>=2.0.1",
     "openai>=1.58.1",
     "pillow>=11.1.0",
+    "pyaudio>=0.2.14",
+    "pymicro-wakeword>=2.2.1",
     "pytest>=8.3.4",
 ]
 

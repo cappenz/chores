@@ -1,73 +1,71 @@
 from __future__ import annotations
 
-import asyncio
-import sys
-import types
-
-from chores import ChoresApp, ChoresState
+from chores import ChoresService, ChoresState
 
 
 def test_state_is_saved_and_loaded(isolated_data_dir):
-    app = ChoresApp()
+    app = ChoresService()
     app.update_state(1, 2, 3)
 
-    reloaded = ChoresApp()
+    reloaded = ChoresService()
 
     assert reloaded.state == ChoresState(1, 2, 3)
     assert (isolated_data_dir / "status.json").exists()
 
 
-def test_on_message_reports_status_without_external_services(isolated_data_dir):
-    app = ChoresApp()
-    replies = []
+def test_status_reports_assignments_without_external_services(isolated_data_dir):
+    app = ChoresService()
 
-    async def reply(message: str) -> None:
-        replies.append(message)
+    status = app.get_status()
 
-    app.set_reply_callback(reply)
+    assert [assignment.chore_id for assignment in status.assignments] == [
+        "dishwasher",
+        "kitchen_trash",
+        "wednesday_trash",
+    ]
+    assert [assignment.person_display_name for assignment in status.assignments] == [
+        "Isabelle",
+        "Isabelle",
+        "Isabelle",
+    ]
 
-    asyncio.run(app.on_message("status please"))
 
-    assert len(replies) == 1
-    assert "dishwasher" in replies[0]
-    assert "kitchen trash" in replies[0]
-    assert "Wednesday trash" in replies[0]
+def test_mark_chore_done_rotates_assignment(isolated_data_dir):
+    app = ChoresService()
 
+    result = app.mark_chore_done("dishwasher", source="test")
 
-def test_mark_chore_done_rotates_assignment_without_audio(isolated_data_dir, monkeypatch):
-    fake_bot = types.SimpleNamespace(
-        chore_people_discord=[
-            "Isabelle, <@1>",
-            "Guido, <@2>",
-            "Daniel, <@3>",
-            "Charlotte, <@4>",
-            "Thomas, <@5>",
-        ]
-    )
-    monkeypatch.setitem(sys.modules, "chores_bot", types.SimpleNamespace(ChoresBot=fake_bot))
-
-    async def fail_if_audio_called(chore_name: str, chore_person: str) -> None:
-        raise AssertionError(f"Audio should not run for {chore_name}/{chore_person}")
-
-    monkeypatch.setitem(
-        sys.modules,
-        "models",
-        types.SimpleNamespace(generate_and_play_audio_async=fail_if_audio_called),
-    )
-
-    app = ChoresApp()
-    app.audio_enabled = False
-    replies = []
-    refreshes = []
-
-    async def reply(message: str) -> None:
-        replies.append(message)
-
-    app.set_reply_callback(reply)
-    app.set_ui_refresh_callback(lambda: refreshes.append("refresh"))
-
-    asyncio.run(app.mark_chore_done("dishwasher"))
-
+    assert result.ok
+    assert result.chore_id == "dishwasher"
+    assert result.previous_person_display_name == "Isabelle"
+    assert result.next_person_display_name == "Guido"
     assert app.state == ChoresState(1, 0, 0)
-    assert replies == ["It's Guido, <@2>'s turn to do the dishwasher"]
-    assert refreshes == ["refresh"]
+
+
+def test_wednesday_trash_alias_matches_wednesday_chore(isolated_data_dir):
+    app = ChoresService()
+
+    result = app.mark_chore_done("wednesday trash is done", source="test")
+
+    assert result.ok
+    assert result.chore_id == "wednesday_trash"
+    assert app.state == ChoresState(0, 0, 1)
+
+
+def test_unknown_chore_returns_rejection(isolated_data_dir):
+    app = ChoresService()
+
+    result = app.mark_chore_done("vacuum", source="test")
+
+    assert not result.ok
+    assert app.state == ChoresState(0, 0, 0)
+
+
+def test_audio_toggle_is_domain_state(isolated_data_dir):
+    app = ChoresService()
+
+    result = app.set_audio_enabled(False, source="test")
+
+    assert result.ok
+    assert not app.get_audio_enabled()
+    assert not result.status.audio_enabled

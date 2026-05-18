@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 
-import models
+from core import audio_announcements
 
 
 def test_generate_audio_uses_announcement_voice_id(monkeypatch):
@@ -23,14 +23,14 @@ def test_generate_audio_uses_announcement_voice_id(monkeypatch):
         calls.append(("play", generated_audio))
 
     monkeypatch.setenv("ELEVENLABS_API_KEY", "test-key")
-    monkeypatch.setattr(models, "ElevenLabs", FakeElevenLabs)
-    monkeypatch.setattr(models, "play", fake_play)
+    monkeypatch.setattr(audio_announcements, "ElevenLabs", FakeElevenLabs)
+    monkeypatch.setattr(audio_announcements, "play", fake_play)
 
-    models.generate_audio("Test announcement")
+    audio_announcements.generate_audio("Test announcement")
 
     assert calls == [
         ("client", "test-key"),
-        ("convert", models.ANNOUNCEMENT_VOICE_ID, "Test announcement", "eleven_multilingual_v2"),
+        ("convert", audio_announcements.ANNOUNCEMENT_VOICE_ID, "Test announcement", "eleven_multilingual_v2"),
         ("play", audio),
     ]
 
@@ -45,10 +45,10 @@ def test_audio_orchestration_uses_mocked_generation(monkeypatch):
     def fake_generate_audio(text: str) -> None:
         calls.append(("audio", text))
 
-    monkeypatch.setattr(models, "generate_speech", fake_generate_speech)
-    monkeypatch.setattr(models, "generate_audio", fake_generate_audio)
+    monkeypatch.setattr(audio_announcements, "generate_speech", fake_generate_speech)
+    monkeypatch.setattr(audio_announcements, "generate_audio", fake_generate_audio)
 
-    asyncio.run(models.generate_and_play_audio_async("dishwasher", "Guido"))
+    asyncio.run(audio_announcements.generate_and_play_audio_async("dishwasher", "Guido"))
 
     assert calls == [
         ("speech", "dishwasher", "Guido"),
