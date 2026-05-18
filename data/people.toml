@@ -1,0 +1,49 @@
+[[people]]
+id = "isabelle"
+display_name = "Isabelle"
+chore_participant = true
+chore_order = 0
+image = "assets/portraits/isabelle-ghibli.png"
+
+[people.discord]
+user_id = "663405556312047633"
+
+[[people]]
+id = "guido"
+display_name = "Guido"
+chore_participant = true
+chore_order = 1
+image = "assets/portraits/guido-ghibli.png"
+
+[people.discord]
+user_id = "339570174451646469"
+
+[[people]]
+id = "daniel"
+display_name = "Daniel"
+chore_participant = true
+chore_order = 2
+image = "assets/portraits/daniel-ghibli.png"
+
+[people.discord]
+user_id = "341262399531122689"
+
+[[people]]
+id = "charlotte"
+display_name = "Charlotte"
+chore_participant = true
+chore_order = 3
+image = "assets/portraits/charlotte-ghibli.png"
+
+[people.discord]
+user_id = "340964475135983618"
+
+[[people]]
+id = "thomas"
+display_name = "Thomas"
+chore_participant = true
+chore_order = 4
+image = "assets/portraits/thomas-ghibli.png"
+
+[people.discord]
+user_id = "869351880155885600"

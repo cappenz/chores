@@ -6,19 +6,9 @@ Audio announcements make chore rotations more playful. They are optional at runt
 
 ## Runtime Flow
 
-When `ChoresApp.mark_chore_done()` advances a chore and `audio_enabled` is true, it calls `generate_and_play_audio_async(chore_name, chore_person)` from `models.py`.
+When the chores domain advances a chore and audio announcements are enabled, the app may request a generated announcement. The helper generates short announcement text, generates speech audio, and plays it on the host speaker.
 
-```mermaid
-flowchart TD
-    ChoreDone[Chore Done] --> AudioEnabled{Audio Enabled}
-    AudioEnabled -->|No| SkipAudio[Skip Audio]
-    AudioEnabled -->|Yes| AsyncWrapper[generate_and_play_audio_async]
-    AsyncWrapper --> SpeechText[generate_speech]
-    SpeechText -->|"OpenAI chat completion"| AnnouncementText[Announcement Text]
-    AnnouncementText --> GenerateAudio[generate_audio]
-    GenerateAudio -->|"ElevenLabs generate"| AudioStream[Audio Stream]
-    AudioStream --> PlayAudio[Default Speaker Playback]
-```
+This behavior should live behind a small API in `core/` if it remains shared infrastructure. The chores domain should not import OpenAI or ElevenLabs directly.
 
 ## Components
 
@@ -35,7 +25,7 @@ Real audio generation requires:
 - `OPENAI_API_KEY`
 - `ELEVENLABS_API_KEY`
 
-The normal app run loads credentials from `.env` with `uv run --env-file .env python3 chores.py`. The manual audio smoke test loads the same file through `make test-audio`.
+The normal app run loads credentials from `.env` with `uv run --env-file .env python3 kitchen_agent.py`. The manual audio smoke test loads the same file through `make test-audio`.
 
 ## Testing
 

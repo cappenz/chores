@@ -1,32 +1,36 @@
-## What is does
+## What it does
 
-Family Chores board with silly announcements. It is excellent.
+Kitchen agent for a family. It tracks chores, runs a local screen, talks through Discord, and can optionally run a wake-word speech agent.
 
 ## Structure
 
-The application consists of three main classes:
+The app is split into top-level components:
 
-- **ChoresApp** (`chores.py`): Core application logic that manages chore state, coordinates between UI and Discord bot, and handles chore completion. Maintains state for three chores (dishwasher, kitchen trash, Wednesday trash) and rotates assignments among family members.
+- `chores/`: chore domain state, rules, persistence, and command results.
+- `display/`: Tk screen and speaker output.
+- `discord_bot/`: Discord connection, parsing, and replies.
+- `speech_agent/`: wake word, Gemini Live, microphone, speaker playback, and Gemini tools.
+- `core/`: people data, shared model/audio helpers, config, and shared types.
 
-- **ChoresUI** (`ui.py`): Tkinter-based graphical interface that displays the current date/time and shows which person is assigned to each chore. Displays person images and allows clicking to mark chores as done.
-
-- **ChoresBot** (`chores_bot.py`): Discord bot integration that listens for messages, processes chore-related commands, and sends replies. Also manages UI refresh loop to keep the display updated.
-
-- **models.py**: Contains voice announcement functionality using OpenAI to generate speech text and ElevenLabs to convert it to audio and play it.
-
-The main entry point (`chores()` function in `chores.py`) initializes all components and connects them via callback functions.
+The main entry point is `kitchen_agent.py`.
 
 ## Dependencies
 
 This package uses uv. To run it:
 - Install uv
 - Make sure your python installation supports tkinter
-- Create a Discord bot and register the bot with your familie's Discord server
-- Create a .env file with valid tokens for Discord, OpenAI and ElevenLabs
+- Create a Discord bot and register the bot with your family's Discord server
+- Create a `.env` file with valid tokens for Discord, OpenAI, ElevenLabs, and Gemini if the speech agent is enabled
 
 Then run the chores app with:
 ```
-uv run --env-file .env python3 chores.py
+uv run --env-file .env python3 kitchen_agent.py
+```
+
+Speech-agent diagnostics:
+```
+uv run --env-file .env python3 speech_agent_cli.py --list-audio-devices
+uv run --env-file .env python3 speech_agent_cli.py --audio-selftest
 ```
 
 ## Features
