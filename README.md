@@ -27,12 +27,6 @@ Then run the chores app with:
 uv run --env-file .env python3 kitchen_agent.py
 ```
 
-Speech-agent diagnostics:
-```
-uv run --env-file .env python3 speech_agent_cli.py --list-audio-devices
-uv run --env-file .env python3 speech_agent_cli.py --audio-selftest
-```
-
 ## Features
 
 - Tracks chores for a group of people
