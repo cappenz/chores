@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import asyncio
+from unittest.mock import patch
 
 from reachy.companion import (
     NoOpReachyCompanion,
     ReachyConfig,
     ReachyEmotion,
+    RetryingReachyCompanion,
     SdkReachyCompanion,
     _smooth_target,
     run_reachy_companion,
@@ -40,6 +42,68 @@ def test_disabled_reachy_uses_noop_companion():
     companion = run_reachy_companion(ReachyConfig(enabled=False))
 
     assert isinstance(companion, NoOpReachyCompanion)
+
+
+def test_enabled_reachy_uses_retrying_companion():
+    companion = run_reachy_companion(ReachyConfig(enabled=True))
+
+    assert isinstance(companion, RetryingReachyCompanion)
+
+
+def test_retrying_companion_reconnects_after_initial_failure():
+    mini = FakeMini()
+    sdk = SdkReachyCompanion(
+        mini,
+        create_head_pose=fake_head_pose,
+        config=ReachyConfig(enabled=True, face_tracking_enabled=False),
+    )
+    attempts = {"count": 0}
+
+    def fake_create(_config: ReachyConfig) -> SdkReachyCompanion:
+        attempts["count"] += 1
+        if attempts["count"] == 1:
+            raise ConnectionError("daemon unavailable")
+        return sdk
+
+    companion = RetryingReachyCompanion(
+        ReachyConfig(enabled=True, face_tracking_enabled=False, connect_retry_seconds=0.01)
+    )
+
+    async def run() -> None:
+        with patch("reachy.companion._create_sdk_companion", side_effect=fake_create):
+            await companion.wake()
+            for _ in range(20):
+                if companion._companion is not None:
+                    break
+                await asyncio.sleep(0.02)
+            await companion.close()
+
+    asyncio.run(run())
+
+    assert attempts["count"] >= 2
+    assert ("enable_motors",) in mini.calls
+
+
+def test_retrying_companion_replays_awake_state_on_connect():
+    mini = FakeMini()
+    sdk = SdkReachyCompanion(
+        mini,
+        create_head_pose=fake_head_pose,
+        config=ReachyConfig(enabled=True, face_tracking_enabled=False),
+    )
+    companion = RetryingReachyCompanion(
+        ReachyConfig(enabled=True, face_tracking_enabled=False, connect_retry_seconds=0.01)
+    )
+
+    async def run() -> None:
+        companion._desired_awake = True
+        with patch("reachy.companion._create_sdk_companion", return_value=sdk):
+            await companion._get_or_connect()
+            await companion.close()
+
+    asyncio.run(run())
+
+    assert ("enable_motors",) in mini.calls
 
 
 def test_noop_companion_methods_are_async_safe():

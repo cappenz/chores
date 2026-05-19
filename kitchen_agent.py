@@ -114,6 +114,9 @@ def _reachy_config_from_env() -> ReachyConfig:
         emotion_playback_enabled=_env_bool("REACHY_EMOTIONS", default=True),
         speaking_motion_enabled=_env_bool("REACHY_SPEAKING_MOTION", default=True),
         debug=_env_bool("REACHY_DEBUG", default=False),
+        connect_retry_seconds=_env_float("REACHY_CONNECT_RETRY_SECONDS", default=3.0),
+        max_connect_retry_seconds=_env_float_optional("REACHY_MAX_CONNECT_RETRY_SECONDS"),
+        reconnect_on_command_failure=_env_bool("REACHY_RECONNECT_ON_FAILURE", default=True),
     )
 
 
@@ -122,6 +125,20 @@ def _env_bool(name: str, *, default: bool) -> bool:
     if value is None:
         return default
     return value.casefold() in {"1", "true", "yes", "on"}
+
+
+def _env_float(name: str, *, default: float) -> float:
+    value = os.getenv(name)
+    if value is None or not value.strip():
+        return default
+    return float(value)
+
+
+def _env_float_optional(name: str) -> float | None:
+    value = os.getenv(name)
+    if value is None or not value.strip():
+        return None
+    return float(value)
 
 
 if __name__ == "__main__":

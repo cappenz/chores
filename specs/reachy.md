@@ -14,7 +14,7 @@ Reachy behavior includes:
 
 ## Responsibilities
 
-Reachy connects to the local Reachy Mini daemon through the official `reachy-mini` SDK, owns robot motion and camera behavior, and exposes an async-friendly API to the application supervisor. Hardware is optional: when Reachy is disabled or unavailable, the app logs the condition once and the rest of the app keeps running through a no-op companion.
+Reachy connects to the local Reachy Mini daemon through the official `reachy-mini` SDK, owns robot motion and camera behavior, and exposes an async-friendly API to the application supervisor. Hardware is optional: when Reachy is disabled, the app uses a no-op companion. When Reachy is enabled but the daemon is temporarily unavailable, a retrying companion keeps attempting connection in the background and replays awake/speaking state after reconnect.
 
 Reachy does not own chore state, Gemini tools, Discord, display widgets, speech recognition, microphone input, speaker playback, or WebRTC runtime behavior.
 
@@ -23,6 +23,8 @@ Reachy does not own chore state, Gemini tools, Discord, display widgets, speech 
 Reachy is an adapter component started by the top-level application supervisor. The speech agent emits generic lifecycle events, and the supervisor forwards those events to the Reachy companion. The speech agent does not import `reachy/`.
 
 The Reachy daemon is a local process controlling either the USB robot or the MuJoCo simulator. The chores app uses the same local SDK connection for both.
+
+On macOS deployment, the daemon is installed as a per-user LaunchAgent via `make reachy-daemon-install`. `REACHY_DAEMON_MODE` in `.env` selects `real`, `sim`, or `mockup-sim` when the plist is generated. `launchd` owns daemon process lifetime; the chores app owns SDK reconnect logic.
 
 ## Public API
 
@@ -44,7 +46,7 @@ The speech agent lifecycle callbacks are generic and robot-independent:
 ## Runtime States
 
 - `disabled`: Reachy integration is off by configuration.
-- `unavailable`: Reachy is enabled but SDK import, daemon connection, or hardware connection failed; the public API behaves as a no-op companion.
+- `unavailable`: Reachy is enabled but not yet connected to the daemon; commands are accepted and replayed after reconnect.
 - `sleeping`: the robot is in a sleep posture and tracking/speaking/emotion behavior is stopped.
 - `awake`: the robot is in an attentive posture and face tracking is the default background behavior.
 - `speaking`: the assistant is playing model audio and Reachy adds subtle head, antenna, or body motion.
@@ -89,11 +91,17 @@ Runtime configuration includes:
 
 - enable or disable Reachy integration
 - connection mode fixed to localhost/USB
-- simulator/manual-test mode
 - face tracking enabled
 - emotion playback enabled
 - speaking motion enabled
+- connect retry interval and optional max retry duration
+- reconnect on command failure
 - debug logging
+
+Daemon install configuration (`.env`, baked into LaunchAgent at install time):
+
+- `REACHY_DAEMON_MODE`: `real`, `sim`, or `mockup-sim`
+- `REACHY_DAEMON_LOG_LEVEL`, `REACHY_DAEMON_NO_MEDIA`, `REACHY_DAEMON_PORT`, `REACHY_DAEMON_EXTRA_ARGS`
 
 Reachy SDK imports are lazy so a developer without Reachy dependencies can run normal tests and non-robot app paths.
 
