@@ -72,6 +72,7 @@ def main() -> None:
         await reachy.set_speaking(active)
 
     async def start_speech_agent() -> None:
+        await prepare_reachy_for_startup(reachy)
         asyncio.create_task(
             run_speech_agent(
                 AppChoresApi(chores, bot, after_result, reachy),
@@ -105,6 +106,10 @@ def main() -> None:
         bot.run()
     finally:
         asyncio.run(reachy.close())
+
+
+async def prepare_reachy_for_startup(reachy) -> None:
+    await reachy.sleep()
 
 
 def _reachy_config_from_env() -> ReachyConfig:

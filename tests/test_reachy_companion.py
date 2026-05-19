@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 from unittest.mock import patch
 
+from kitchen_agent import prepare_reachy_for_startup
 from reachy.companion import (
     NoOpReachyCompanion,
     ReachyConfig,
@@ -117,6 +118,21 @@ def test_noop_companion_methods_are_async_safe():
         await companion.close()
 
     asyncio.run(run())
+
+
+def test_app_startup_sends_reachy_to_sleep():
+    class FakeReachy:
+        def __init__(self) -> None:
+            self.calls = []
+
+        async def sleep(self) -> None:
+            self.calls.append("sleep")
+
+    reachy = FakeReachy()
+
+    asyncio.run(prepare_reachy_for_startup(reachy))
+
+    assert reachy.calls == ["sleep"]
 
 
 def test_wake_and_sleep_use_reachy_motion_api():
