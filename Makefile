@@ -1,4 +1,4 @@
-.PHONY: run test test-audio reachy-sim reachy-sim-setup
+.PHONY: run test test-audio reachy-sim reachy-sim-setup push-cappenz
 
 run:
 	uv run --env-file .env python3 kitchen_agent.py
@@ -14,3 +14,6 @@ reachy-sim-setup:
 
 reachy-sim: reachy-sim-setup
 	uv run mjpython -m reachy_mini.daemon.app.main --sim
+
+push-cappenz:
+	git push git@github.com:cappenz/chores.git main:main
