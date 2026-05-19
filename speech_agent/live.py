@@ -123,7 +123,8 @@ class AudioLoop:
                 await asyncio.gather(*tasks, return_exceptions=True)
             await self._set_assistant_speaking(False)
             if self.audio_stream:
-                self.audio_stream.close()
+                await asyncio.to_thread(self.audio_stream.stop_stream)
+                await asyncio.to_thread(self.audio_stream.close)
             self.pya.terminate()
             print(f"[listening] Exited: {self.stop_reason}.", flush=True)
 
