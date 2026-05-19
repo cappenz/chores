@@ -24,6 +24,7 @@ MODELS = (
 STOP_LISTENING_PHRASES = ("goodbye", "stop listening")
 VOICE_NAME = "Schedar"
 ConnectionCallback = Callable[[bool], Awaitable[None] | None]
+TextCallback = Callable[[str], Awaitable[None] | None]
 INITIAL_GREETING_PROMPT = "Greet the family now. Say only: Hello!"
 SYSTEM_INSTRUCTION = """
 You are the helpful kitchen voice assistant for the Appenzeller family.
@@ -70,6 +71,8 @@ class AudioLoop:
         input_device_index: int | None,
         output_device_index: int | None,
         idle_timeout_seconds: float,
+        on_assistant_speaking: ConnectionCallback | None = None,
+        on_assistant_response_text: TextCallback | None = None,
     ) -> None:
         self.session = session
         self.chores = chores
@@ -87,6 +90,9 @@ class AudioLoop:
         self.stop_reason = "listening session ended"
         self._mic_send_silence = False
         self._mic_reopen_task: asyncio.Task | None = None
+        self.on_assistant_speaking = on_assistant_speaking
+        self.on_assistant_response_text = on_assistant_response_text
+        self._assistant_speaking = False
 
     async def run(self) -> None:
         self.audio_in_queue = asyncio.Queue()
@@ -115,6 +121,7 @@ class AudioLoop:
                     task.cancel()
             if tasks:
                 await asyncio.gather(*tasks, return_exceptions=True)
+            await self._set_assistant_speaking(False)
             if self.audio_stream:
                 self.audio_stream.close()
             self.pya.terminate()
@@ -192,6 +199,7 @@ class AudioLoop:
 
                 if data := response.data:
                     self._mic_send_silence = True
+                    await self._set_assistant_speaking(True)
                     self._cancel_mic_reopen()
                     await self.audio_in_queue.put(data)
                     continue
@@ -211,11 +219,14 @@ class AudioLoop:
                             self.stop_reason = "stop phrase heard"
                             raise ListeningComplete()
                     if server_content.output_transcription and server_content.output_transcription.text:
-                        print(server_content.output_transcription.text, end="", flush=True)
+                        response_text = server_content.output_transcription.text
+                        print(response_text, end="", flush=True)
+                        await _notify_text(self.on_assistant_response_text, response_text)
                     if server_content.interrupted:
                         _drain_audio_queue(self.audio_in_queue)
                         self._cancel_mic_reopen()
                         self._mic_send_silence = False
+                        await self._set_assistant_speaking(False)
 
             if sent_tool_response:
                 continue
@@ -270,10 +281,17 @@ class AudioLoop:
                 await asyncio.sleep(delay_s)
                 if self.audio_in_queue is not None and self.audio_in_queue.empty():
                     self._mic_send_silence = False
+                    await self._set_assistant_speaking(False)
             except asyncio.CancelledError:
                 pass
 
         self._mic_reopen_task = asyncio.create_task(reopen_after_quiet_playback())
+
+    async def _set_assistant_speaking(self, active: bool) -> None:
+        if self._assistant_speaking == active:
+            return
+        self._assistant_speaking = active
+        await _notify_connection(self.on_assistant_speaking, active)
 
 
 async def run_live(
@@ -285,6 +303,8 @@ async def run_live(
     output_device_index: int | None,
     idle_timeout_seconds: float,
     on_connection_active: ConnectionCallback | None = None,
+    on_assistant_speaking: ConnectionCallback | None = None,
+    on_assistant_response_text: TextCallback | None = None,
 ) -> None:
     last_error: BaseException | None = None
     async with AsyncExitStack() as stack:
@@ -314,6 +334,8 @@ async def run_live(
             input_device_index=input_device_index,
             output_device_index=output_device_index,
             idle_timeout_seconds=idle_timeout_seconds,
+            on_assistant_speaking=on_assistant_speaking,
+            on_assistant_response_text=on_assistant_response_text,
         )
         try:
             await loop.run()
@@ -361,6 +383,14 @@ async def _notify_connection(callback: ConnectionCallback | None, active: bool) 
     if callback is None:
         return
     result = callback(active)
+    if result is not None:
+        await result
+
+
+async def _notify_text(callback: TextCallback | None, text: str) -> None:
+    if callback is None:
+        return
+    result = callback(text)
     if result is not None:
         await result
 

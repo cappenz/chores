@@ -12,6 +12,9 @@ class SpeechChoresApi(Protocol):
     def get_status(self):
         ...
 
+    def show_emotion(self, emotion: str):
+        ...
+
 
 def build_tools() -> list[dict]:
     return [
@@ -60,7 +63,7 @@ def build_tools() -> list[dict]:
 def handle_tool_call(name: str, args: dict, chores: SpeechChoresApi) -> str:
     if name == "show_emotion":
         emotion = str(args.get("emotion", ""))
-        print(f"[show_emotion] {emotion}", flush=True)
+        chores.show_emotion(emotion)
         return "ok"
 
     if name == "mark_chore_done":

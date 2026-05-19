@@ -20,6 +20,7 @@ The software is organized around these top-level directories:
 - `display/`: Tk UI component.
 - `discord_bot/`: Discord component.
 - `speech_agent/`: wake-word and Gemini Live component.
+- `reachy/`: Reachy Mini companion component.
 - `core/`: shared infrastructure such as people loading, model invocation, config, message types, logging, and cross-component utilities.
 
 The top-level Python entry point should be intentionally short. It should construct shared services, start the component runners as asyncio tasks, coordinate shutdown, and avoid owning domain logic.
@@ -33,8 +34,9 @@ The `chores/` domain owns chore state and chore behavior. The other components a
 - `display/` turns local clicks into chore commands and renders chore state.
 - `discord_bot/` turns Discord messages into chore commands and sends Discord responses.
 - `speech_agent/` turns Gemini tool calls into chore commands and speaks assistant responses.
+- `reachy/` turns speech lifecycle events into robot motion and vision behavior.
 
-The adapters may call the public API of `chores/`. The `chores/` domain must not import `display/`, `discord_bot/`, or `speech_agent/`.
+The adapters may call the public API of `chores/`. The `chores/` domain must not import `display/`, `discord_bot/`, `speech_agent/`, or `reachy/`.
 
 ## Architecture
 
@@ -43,6 +45,7 @@ The main concurrent components are:
 - UI display runner.
 - Discord bot runner.
 - Speech agent runner.
+- Reachy Mini companion runner, when enabled.
 
 These should run as asyncio tasks under one application supervisor where practical. Blocking libraries, especially PyAudio, may use worker threads behind the owning component boundary. If a component requires a dedicated OS thread later, it must still communicate through the same public APIs/messages and marshal domain calls safely back to the owning event loop.
 
@@ -52,6 +55,7 @@ These should run as asyncio tasks under one application supervisor where practic
 - `specs/display.md`: Tk display component.
 - `specs/discord_bot.md`: Discord component.
 - `specs/speech_agent.md`: wake-word and Gemini Live component.
+- `specs/reachy.md`: Reachy Mini companion component.
 - `specs/core.md`: shared infrastructure and people data.
 - `specs/audio.md`: generated chore announcement audio.
 

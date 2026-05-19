@@ -77,3 +77,25 @@ def test_speech_chore_tool_rejects_unknown_chore(isolated_data_dir):
 
     assert "Please use the words" in result
     assert chores.state.dishwasher_status == 0
+
+
+def test_speech_emotion_tool_delegates_to_app_api():
+    class FakeChores:
+        def __init__(self):
+            self.emotions = []
+
+        def mark_chore_done(self, chore: str, source: str = "speech"):
+            raise AssertionError("mark_chore_done should not be called")
+
+        def get_status(self):
+            return None
+
+        def show_emotion(self, emotion: str):
+            self.emotions.append(emotion)
+
+    chores = FakeChores()
+
+    result = handle_tool_call("show_emotion", {"emotion": "happy"}, chores)
+
+    assert result == "ok"
+    assert chores.emotions == ["happy"]
