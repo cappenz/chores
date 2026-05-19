@@ -1,17 +1,52 @@
 from __future__ import annotations
 
+import asyncio
 import array
+import functools
 import math
 import platform
 import subprocess
 import wave
+from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 SEND_SAMPLE_RATE = 16000
 RECEIVE_SAMPLE_RATE = 24000
 CHANNELS = 1
 CHUNK_SIZE = 1024
+
+
+class PortAudioRuntime:
+    def __init__(self) -> None:
+        self.pyaudio = _pyaudio()
+        self.pya = None
+        self._executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="speech-audio")
+
+    async def start(self) -> None:
+        await self.run(self._start)
+
+    async def close(self) -> None:
+        try:
+            await self.run(self._close)
+        finally:
+            self._executor.shutdown(wait=True)
+
+    async def run(self, func: Callable[..., Any], *args, **kwargs) -> Any:
+        loop = asyncio.get_running_loop()
+        call = functools.partial(func, *args, **kwargs)
+        return await loop.run_in_executor(self._executor, call)
+
+    def _start(self) -> None:
+        if self.pya is None:
+            self.pya = self.pyaudio.PyAudio()
+
+    def _close(self) -> None:
+        if self.pya is not None:
+            self.pya.terminate()
+            self.pya = None
 
 
 @dataclass(frozen=True)

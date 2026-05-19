@@ -4,6 +4,7 @@ import os
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
+from speech_agent.audio import PortAudioRuntime
 from speech_agent.live import run_live
 from speech_agent.tools import SpeechChoresApi
 from speech_agent.wake import wait_for_wake_word
@@ -32,31 +33,38 @@ async def run_speech_agent(chores: SpeechChoresApi, config: SpeechAgentConfig) -
     if not os.environ.get("GEMINI_API_KEY"):
         raise RuntimeError("Set GEMINI_API_KEY to your Google AI Studio API key.")
     genai = _genai()
+    audio_runtime = PortAudioRuntime()
+    await audio_runtime.start()
 
-    while True:
-        await wait_for_wake_word(
-            input_device_index=config.input_device_index,
-            wake_model=config.wake_model,
-            wake_config=config.wake_config,
-            debug=config.debug,
-        )
-        await _notify_connection(config.on_assistant_awake, True)
-        client = genai.Client(http_options={"api_version": "v1alpha"})
-        try:
-            await run_live(
-                client,
-                chores,
-                debug=config.debug,
+    try:
+        while True:
+            await wait_for_wake_word(
+                audio_runtime,
                 input_device_index=config.input_device_index,
-                output_device_index=config.output_device_index,
-                idle_timeout_seconds=config.idle_timeout_seconds,
-                on_connection_active=config.on_gemini_connection_active,
-                on_assistant_speaking=config.on_assistant_speaking,
-                on_assistant_response_text=config.on_assistant_response_text,
+                wake_model=config.wake_model,
+                wake_config=config.wake_config,
+                debug=config.debug,
             )
-        finally:
-            await _notify_connection(config.on_assistant_awake, False)
-        print("[sleeping] Returned to wake-word mode.", flush=True)
+            await _notify_connection(config.on_assistant_awake, True)
+            client = genai.Client(http_options={"api_version": "v1alpha"})
+            try:
+                await run_live(
+                    client,
+                    chores,
+                    audio_runtime,
+                    debug=config.debug,
+                    input_device_index=config.input_device_index,
+                    output_device_index=config.output_device_index,
+                    idle_timeout_seconds=config.idle_timeout_seconds,
+                    on_connection_active=config.on_gemini_connection_active,
+                    on_assistant_speaking=config.on_assistant_speaking,
+                    on_assistant_response_text=config.on_assistant_response_text,
+                )
+            finally:
+                await _notify_connection(config.on_assistant_awake, False)
+            print("[sleeping] Returned to wake-word mode.", flush=True)
+    finally:
+        await audio_runtime.close()
 
 
 def _genai():
