@@ -3,7 +3,6 @@ from __future__ import annotations
 import asyncio
 import time
 from collections.abc import Awaitable, Callable
-from contextlib import AsyncExitStack
 
 from speech_agent.audio import (
     CHUNK_SIZE,
@@ -23,6 +22,7 @@ MODELS = (
 )
 STOP_LISTENING_PHRASES = ("goodbye", "stop listening")
 VOICE_NAME = "Schedar"
+GEMINI_SESSION_CLOSE_TIMEOUT_SECONDS = 2.0
 ConnectionCallback = Callable[[bool], Awaitable[None] | None]
 TextCallback = Callable[[str], Awaitable[None] | None]
 INITIAL_GREETING_PROMPT = "Greet the family now. Say only: Hello!"
@@ -307,23 +307,27 @@ async def run_live(
     on_assistant_response_text: TextCallback | None = None,
 ) -> None:
     last_error: BaseException | None = None
-    async with AsyncExitStack() as stack:
-        session = None
-        connection_marked_active = False
-        for model in MODELS:
-            try:
-                print(f"Connecting with model: {model}", flush=True)
-                session = await stack.enter_async_context(
-                    client.aio.live.connect(model=model, config=_build_config(model))
-                )
-                break
-            except BaseException as error:
-                last_error = error
-                if model == MODELS[-1]:
-                    raise
-                print(f"Model {model!r} failed ({error!r}); trying fallback.", flush=True)
-        if session is None:
-            raise RuntimeError("No Live session established.") from last_error
+    session = None
+    session_context = None
+    connection_marked_active = False
+    exit_error: BaseException | None = None
+    for model in MODELS:
+        try:
+            print(f"Connecting with model: {model}", flush=True)
+            session_context = client.aio.live.connect(model=model, config=_build_config(model))
+            session = await session_context.__aenter__()
+            break
+        except BaseException as error:
+            last_error = error
+            if session_context is not None:
+                await session_context.__aexit__(type(error), error, error.__traceback__)
+                session_context = None
+            if model == MODELS[-1]:
+                raise
+            print(f"Model {model!r} failed ({error!r}); trying fallback.", flush=True)
+    if session is None:
+        raise RuntimeError("No Live session established.") from last_error
+    try:
         await _notify_connection(on_connection_active, True)
         connection_marked_active = True
         await _send_initial_greeting(session)
@@ -339,9 +343,28 @@ async def run_live(
         )
         try:
             await loop.run()
+        except BaseException as error:
+            exit_error = error
+            raise
         finally:
             if connection_marked_active:
                 await _notify_connection(on_connection_active, False)
+    finally:
+        if session_context is not None:
+            try:
+                await asyncio.wait_for(
+                    session_context.__aexit__(
+                        type(exit_error) if exit_error else None,
+                        exit_error,
+                        exit_error.__traceback__ if exit_error else None,
+                    ),
+                    timeout=GEMINI_SESSION_CLOSE_TIMEOUT_SECONDS,
+                )
+            except TimeoutError:
+                print(
+                    "[listening] Gemini session close timed out; returning to wake-word mode.",
+                    flush=True,
+                )
 
 
 def _build_config(model: str) -> dict:
