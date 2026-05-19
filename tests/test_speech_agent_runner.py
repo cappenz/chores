@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 
 from speech_agent.runner import SpeechAgentConfig, _wait_for_wake_word_with_retries
+from speech_agent.wake import _read_stream_chunk
 
 
 def test_wake_word_audio_errors_are_retried():
@@ -41,3 +42,21 @@ def test_non_audio_wake_word_errors_are_not_retried():
         assert str(error) == "bad wake model"
     else:
         raise AssertionError("expected RuntimeError")
+
+
+def test_wake_word_read_timeout_becomes_audio_error(monkeypatch):
+    class FakeStream:
+        def read(self, *_args, **_kwargs):
+            return b""
+
+    async def stalled_to_thread(*_args, **_kwargs):
+        await asyncio.Future()
+
+    monkeypatch.setattr("speech_agent.wake.asyncio.to_thread", stalled_to_thread)
+
+    try:
+        asyncio.run(_read_stream_chunk(FakeStream(), {}, timeout_seconds=0.01))
+    except OSError as error:
+        assert "timed out" in str(error)
+    else:
+        raise AssertionError("expected OSError")

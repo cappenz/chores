@@ -4,6 +4,8 @@ import asyncio
 
 from speech_agent.audio import CHUNK_SIZE, CHANNELS, SEND_SAMPLE_RATE, _input_device_info
 
+WAKE_READ_TIMEOUT_SECONDS = 2.0
+
 
 async def wait_for_wake_word(
     *,
@@ -42,10 +44,10 @@ async def wait_for_wake_word(
         stream = await asyncio.to_thread(open_and_start_mic)
         read_kwargs = {"exception_on_overflow": False} if __debug__ else {}
         for _ in range(15):
-            await asyncio.to_thread(stream.read, CHUNK_SIZE, **read_kwargs)
+            await _read_stream_chunk(stream, read_kwargs)
 
         while True:
-            data = await asyncio.to_thread(stream.read, CHUNK_SIZE, **read_kwargs)
+            data = await _read_stream_chunk(stream, read_kwargs)
             for feature_frame in features.process_streaming(data):
                 if detector.process_streaming(feature_frame):
                     print("[wake] Wake word detected; entering listening mode.", flush=True)
@@ -57,6 +59,19 @@ async def wait_for_wake_word(
         if detector:
             detector.close()
         pya.terminate()
+
+
+async def _read_stream_chunk(stream, read_kwargs: dict, timeout_seconds: float = WAKE_READ_TIMEOUT_SECONDS) -> bytes:
+    try:
+        data = await asyncio.wait_for(
+            asyncio.to_thread(stream.read, CHUNK_SIZE, **read_kwargs),
+            timeout=timeout_seconds,
+        )
+    except TimeoutError as error:
+        raise OSError(f"Wake-word microphone read timed out after {timeout_seconds:.1f}s.") from error
+    if not data:
+        raise OSError("Wake-word microphone returned no audio.")
+    return data
 
 
 def _wake_imports():
