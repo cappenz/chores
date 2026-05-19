@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import threading
 import time
 from collections.abc import Awaitable, Callable
 
@@ -83,6 +84,7 @@ class AudioLoop:
         self.audio_in_queue: asyncio.Queue[bytes] | None = None
         self.out_queue: asyncio.Queue[dict] | None = None
         self.audio_stream = None
+        self._audio_stream_lock = threading.Lock()
         self.pyaudio = _pyaudio()
         self.pya = self.pyaudio.PyAudio()
         self._send_chunks = 0
@@ -122,9 +124,7 @@ class AudioLoop:
             if tasks:
                 await asyncio.gather(*tasks, return_exceptions=True)
             await self._set_assistant_speaking(False)
-            if self.audio_stream:
-                await asyncio.to_thread(self.audio_stream.stop_stream)
-                await asyncio.to_thread(self.audio_stream.close)
+            await asyncio.to_thread(self._stop_and_close_audio_stream)
             self.pya.terminate()
             print(f"[listening] Exited: {self.stop_reason}.", flush=True)
 
@@ -134,7 +134,19 @@ class AudioLoop:
         if self.debug:
             print(f"[debug] mic: index={mic_info['index']} name={mic_info['name']!r}", flush=True)
 
-        def open_and_start_mic():
+        await asyncio.to_thread(self._open_and_start_audio_stream, mic_info)
+        read_kwargs = {"exception_on_overflow": False} if __debug__ else {}
+        for _ in range(15):
+            await asyncio.to_thread(self._read_audio_stream, read_kwargs)
+
+        while True:
+            data = await asyncio.to_thread(self._read_audio_stream, read_kwargs)
+            if self._mic_send_silence:
+                data = b"\x00" * len(data)
+            await self.out_queue.put({"data": data, "mime_type": MIC_MIME})
+
+    def _open_and_start_audio_stream(self, mic_info: dict) -> None:
+        with self._audio_stream_lock:
             stream = self.pya.open(
                 format=self.pyaudio.paInt16,
                 channels=CHANNELS,
@@ -144,18 +156,22 @@ class AudioLoop:
                 frames_per_buffer=CHUNK_SIZE,
             )
             stream.start_stream()
-            return stream
+            self.audio_stream = stream
 
-        self.audio_stream = await asyncio.to_thread(open_and_start_mic)
-        read_kwargs = {"exception_on_overflow": False} if __debug__ else {}
-        for _ in range(15):
-            await asyncio.to_thread(self.audio_stream.read, CHUNK_SIZE, **read_kwargs)
+    def _read_audio_stream(self, read_kwargs: dict) -> bytes:
+        with self._audio_stream_lock:
+            if self.audio_stream is None:
+                return b""
+            return self.audio_stream.read(CHUNK_SIZE, **read_kwargs)
 
-        while True:
-            data = await asyncio.to_thread(self.audio_stream.read, CHUNK_SIZE, **read_kwargs)
-            if self._mic_send_silence:
-                data = b"\x00" * len(data)
-            await self.out_queue.put({"data": data, "mime_type": MIC_MIME})
+    def _stop_and_close_audio_stream(self) -> None:
+        with self._audio_stream_lock:
+            stream = self.audio_stream
+            self.audio_stream = None
+            if stream is None:
+                return
+            stream.stop_stream()
+            stream.close()
 
     async def send_realtime(self) -> None:
         assert self.out_queue is not None
@@ -244,30 +260,47 @@ class AudioLoop:
     async def play_audio(self) -> None:
         assert self.audio_in_queue is not None
         speaker = _output_device_info(self.pya, self.output_device_index)
+        playback_lock = threading.Lock()
+        stream = None
 
         def open_and_start_playback():
-            stream = self.pya.open(
-                format=self.pyaudio.paInt16,
-                channels=CHANNELS,
-                rate=RECEIVE_SAMPLE_RATE,
-                output=True,
-                output_device_index=speaker["index"],
-                frames_per_buffer=CHUNK_SIZE,
-            )
-            stream.start_stream()
-            return stream
+            nonlocal stream
+            with playback_lock:
+                stream = self.pya.open(
+                    format=self.pyaudio.paInt16,
+                    channels=CHANNELS,
+                    rate=RECEIVE_SAMPLE_RATE,
+                    output=True,
+                    output_device_index=speaker["index"],
+                    frames_per_buffer=CHUNK_SIZE,
+                )
+                stream.start_stream()
 
-        stream = await asyncio.to_thread(open_and_start_playback)
+        def write_playback(bytestream: bytes):
+            with playback_lock:
+                if stream is not None:
+                    stream.write(bytestream)
+
+        def stop_and_close_playback():
+            nonlocal stream
+            with playback_lock:
+                if stream is None:
+                    return
+                playback_stream = stream
+                stream = None
+                playback_stream.stop_stream()
+                playback_stream.close()
+
+        await asyncio.to_thread(open_and_start_playback)
         try:
             while True:
                 bytestream = await self.audio_in_queue.get()
-                await asyncio.to_thread(stream.write, bytestream)
+                await asyncio.to_thread(write_playback, bytestream)
                 if self.audio_in_queue.empty():
                     self._schedule_mic_reopen()
         finally:
             self._cancel_mic_reopen()
-            await asyncio.to_thread(stream.stop_stream)
-            await asyncio.to_thread(stream.close)
+            await asyncio.to_thread(stop_and_close_playback)
 
     def _cancel_mic_reopen(self) -> None:
         if self._mic_reopen_task and not self._mic_reopen_task.done():
