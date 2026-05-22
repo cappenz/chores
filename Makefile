@@ -1,8 +1,3 @@
-ifneq (,$(wildcard .env))
-include .env
-export
-endif
-
 .PHONY: run test test-audio reachy-sim reachy-sim-setup push-cappenz \
 	reachy-daemon-install reachy-daemon-uninstall reachy-daemon-start \
 	reachy-daemon-stop reachy-daemon-status reachy-daemon-logs reachy-daemon-print
