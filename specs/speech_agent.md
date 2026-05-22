@@ -11,7 +11,7 @@ The `speech_agent/` directory owns the wake-word-gated Gemini Live assistant. It
 - Stream microphone audio to Gemini while listening.
 - Play Gemini audio responses.
 - Handle Gemini tool calls.
-- Expose a chore-completion tool that delegates to the chore domain API.
+- Expose chore read/write tools that delegate to the chore domain API.
 - Return to wake-word mode when the user says a stop phrase or when idle timeout is reached.
 - Provide manual diagnostics for audio device listing and mic/speaker self-test.
 
@@ -57,13 +57,15 @@ The runner should accept a chore-facing API rather than concrete Discord or disp
 
 ## Gemini Tools
 
-The first chore tool should be a completion command:
+The chore tools are:
 
-- tool name: `mark_chore_done`
-- arguments: chore name or chore id
-- behavior: validate the chore, call the chore domain API, return a short result string to Gemini
+- tool name: `read_chores`
+- arguments: none
+- behavior: return canonical current `(chore_id, person_id)` assignment pairs to Gemini
 
-Future tools may include chore status queries, but the first integration should keep the bridge narrow.
+- tool name: `write_chore`
+- arguments: canonical chore id and `person`, where `person` is either a chore participant id or `next`
+- behavior: validate the chore and person, call the chore domain API, persist state changes, and return a short result string to Gemini
 
 ## Configuration
 

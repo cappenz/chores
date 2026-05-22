@@ -28,11 +28,13 @@ The `chores/` directory owns the core chore state and rules. It is the domain la
 The domain should expose a small service API, likely named `ChoresService`:
 
 - `get_status() -> ChoresStatus`: return current chore assignments and audio state.
+- `read_chores() -> tuple[tuple[str, str], ...]`: return canonical `(chore_id, person_id)` assignment pairs.
+- `write_chore(chore: ChoreId | str, person: str, source: CommandSource) -> ChoreCommandResult`: set a chore to a specific participant, or use `person="next"` to advance by one rotation step.
 - `mark_chore_done(chore: ChoreId | str, source: CommandSource) -> ChoreCommandResult`: normalize, validate, rotate, persist, and return the completion result.
 - `set_audio_enabled(enabled: bool, source: CommandSource) -> ChoreCommandResult`: update the audio-announcement preference and return the new setting.
 - `get_audio_enabled() -> bool`: return whether generated chore announcements are enabled.
 
-Inputs from components should be normalized at the boundary. Unknown chores should produce a typed rejection result, not raise a generic exception.
+Inputs from components should be normalized at the boundary. Unknown chores and people should produce typed rejection results, not raise generic exceptions.
 
 ## State
 

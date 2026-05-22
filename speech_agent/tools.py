@@ -9,6 +9,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Protocol
 
 VALID_CHORES = ("dishwasher", "kitchen_trash", "wednesday_trash")
+VALID_CHORE_PEOPLE = ("next", "isabelle", "guido", "daniel", "charlotte", "thomas")
 BRAVE_API_URL = "https://api.search.brave.com/res/v1/web/search"
 MAX_SEARCHES_PER_SESSION = 50
 MAX_PARALLEL_SEARCHES = 5
@@ -18,6 +19,12 @@ _search_state = {"search_count": 0}
 
 
 class SpeechChoresApi(Protocol):
+    def read_chores(self) -> tuple[tuple[str, str], ...]:
+        ...
+
+    def write_chore(self, chore: str, person: str, source: str = "speech"):
+        ...
+
     def mark_chore_done(self, chore: str, source: str = "speech"):
         ...
 
@@ -47,10 +54,20 @@ def build_tools() -> list[dict]:
                     },
                 },
                 {
-                    "name": "mark_chore_done",
+                    "name": "read_chores",
                     "description": (
-                        "Mark one household chore as completed. Valid chores are "
-                        "dishwasher, kitchen_trash, and wednesday_trash."
+                        "Read the current household chore assignments. Use this when "
+                        "the user asks who has a chore, whose turn it is, or what the "
+                        "current chore status is."
+                    ),
+                },
+                {
+                    "name": "write_chore",
+                    "description": (
+                        "Set the person responsible for one household chore. Use "
+                        "person='next' to advance that chore to the next person in the "
+                        "normal rotation. Use a specific person when the user asks to "
+                        "assign the chore to someone or skip someone in the rotation."
                     ),
                     "parameters": {
                         "type": "object",
@@ -62,9 +79,17 @@ def build_tools() -> list[dict]:
                                     "Canonical chore id: dishwasher, kitchen_trash, "
                                     "or wednesday_trash. Use dishwasher for dishes."
                                 ),
+                            },
+                            "person": {
+                                "type": "string",
+                                "enum": list(VALID_CHORE_PEOPLE),
+                                "description": (
+                                    "The person to assign the chore to, or 'next' to "
+                                    "advance to the next person in the chore rotation."
+                                ),
                             }
                         },
-                        "required": ["chore"],
+                        "required": ["chore", "person"],
                     },
                 },
                 {
@@ -103,9 +128,13 @@ async def handle_tool_call(name: str, args: dict, chores: SpeechChoresApi) -> st
         chores.show_emotion(emotion)
         return "ok"
 
-    if name == "mark_chore_done":
+    if name == "read_chores":
+        return _format_chore_assignments(chores.read_chores())
+
+    if name == "write_chore":
         chore = str(args.get("chore", ""))
-        result = chores.mark_chore_done(chore, source="speech")
+        person = str(args.get("person", ""))
+        result = chores.write_chore(chore, person, source="speech")
         return result.message
 
     if name == "web_search":
@@ -113,6 +142,12 @@ async def handle_tool_call(name: str, args: dict, chores: SpeechChoresApi) -> st
         return await asyncio.to_thread(web_search, queries)
 
     return f"unknown tool: {name}"
+
+
+def _format_chore_assignments(assignments: tuple[tuple[str, str], ...]) -> str:
+    if not assignments:
+        return "No chore assignments are available."
+    return "\n".join(f"{chore}: {person}" for chore, person in assignments)
 
 
 def web_search(queries: list[str]) -> str:

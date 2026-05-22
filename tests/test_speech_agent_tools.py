@@ -19,7 +19,8 @@ def test_speech_agent_owns_gemini_tool_definitions():
 
     assert {declaration["name"] for declaration in declarations} == {
         "show_emotion",
-        "mark_chore_done",
+        "read_chores",
+        "write_chore",
         "web_search",
     }
 
@@ -29,7 +30,7 @@ def test_speech_chore_tool_lists_valid_chores():
     chore_tool = next(
         declaration
         for declaration in tools[0]["function_declarations"]
-        if declaration["name"] == "mark_chore_done"
+        if declaration["name"] == "write_chore"
     )
 
     assert chore_tool["parameters"]["properties"]["chore"]["enum"] == [
@@ -37,6 +38,35 @@ def test_speech_chore_tool_lists_valid_chores():
         "kitchen_trash",
         "wednesday_trash",
     ]
+
+
+def test_speech_chore_tool_lists_valid_people():
+    tools = build_tools()
+    chore_tool = next(
+        declaration
+        for declaration in tools[0]["function_declarations"]
+        if declaration["name"] == "write_chore"
+    )
+
+    assert chore_tool["parameters"]["properties"]["person"]["enum"] == [
+        "next",
+        "isabelle",
+        "guido",
+        "daniel",
+        "charlotte",
+        "thomas",
+    ]
+
+
+def test_read_chores_tool_has_no_parameters():
+    tools = build_tools()
+    read_tool = next(
+        declaration
+        for declaration in tools[0]["function_declarations"]
+        if declaration["name"] == "read_chores"
+    )
+
+    assert "parameters" not in read_tool
 
 
 def test_web_search_tool_accepts_queries():
@@ -83,22 +113,47 @@ def test_initial_greeting_prompts_model_to_speak():
     ]
 
 
-def test_speech_chore_tool_delegates_to_domain(isolated_data_dir):
+def test_speech_write_chore_tool_advances_to_next_person(isolated_data_dir):
     chores = ChoresService()
 
     result = asyncio.run(
-        handle_tool_call("mark_chore_done", {"chore": "dishwasher"}, chores)
+        handle_tool_call("write_chore", {"chore": "dishwasher", "person": "next"}, chores)
     )
 
     assert "Guido" in result
     assert chores.state.dishwasher_status == 1
 
 
-def test_speech_chore_tool_rejects_unknown_chore(isolated_data_dir):
+def test_speech_write_chore_tool_assigns_specific_person(isolated_data_dir):
     chores = ChoresService()
 
     result = asyncio.run(
-        handle_tool_call("mark_chore_done", {"chore": "vacuum"}, chores)
+        handle_tool_call(
+            "write_chore",
+            {"chore": "dishwasher", "person": "charlotte"},
+            chores,
+        )
+    )
+
+    assert "Charlotte" in result
+    assert chores.state.dishwasher_status == 3
+
+
+def test_speech_read_chores_tool_reports_assignments(isolated_data_dir):
+    chores = ChoresService()
+
+    result = asyncio.run(handle_tool_call("read_chores", {}, chores))
+
+    assert "dishwasher: isabelle" in result
+    assert "kitchen_trash: isabelle" in result
+    assert "wednesday_trash: isabelle" in result
+
+
+def test_speech_write_chore_tool_rejects_unknown_chore(isolated_data_dir):
+    chores = ChoresService()
+
+    result = asyncio.run(
+        handle_tool_call("write_chore", {"chore": "vacuum", "person": "next"}, chores)
     )
 
     assert "Please use the words" in result
@@ -109,6 +164,12 @@ def test_speech_emotion_tool_delegates_to_app_api():
     class FakeChores:
         def __init__(self):
             self.emotions = []
+
+        def read_chores(self):
+            raise AssertionError("read_chores should not be called")
+
+        def write_chore(self, chore: str, person: str, source: str = "speech"):
+            raise AssertionError("write_chore should not be called")
 
         def mark_chore_done(self, chore: str, source: str = "speech"):
             raise AssertionError("mark_chore_done should not be called")
@@ -189,6 +250,12 @@ def test_web_search_formats_mocked_brave_results(monkeypatch):
 
 def test_web_search_tool_dispatches(monkeypatch):
     class FakeChores:
+        def read_chores(self):
+            raise AssertionError("read_chores should not be called")
+
+        def write_chore(self, chore: str, person: str, source: str = "speech"):
+            raise AssertionError("write_chore should not be called")
+
         def mark_chore_done(self, chore: str, source: str = "speech"):
             raise AssertionError("mark_chore_done should not be called")
 

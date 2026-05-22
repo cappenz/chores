@@ -44,6 +44,7 @@ class ChoreCommandResult:
     ok: bool
     message: str
     status: ChoresStatus
+    state_changed: bool = False
     chore_id: str | None = None
     chore_display_name: str | None = None
     previous_person_id: str | None = None
@@ -92,7 +93,16 @@ class ChoresService:
         )
         return ChoresStatus(assignments=assignments, audio_enabled=self.audio_enabled)
 
+    def read_chores(self) -> tuple[tuple[str, str], ...]:
+        return tuple(
+            (assignment.chore_id, assignment.person_id)
+            for assignment in self.get_status().assignments
+        )
+
     def mark_chore_done(self, chore: str, source: CommandSource = "system") -> ChoreCommandResult:
+        return self.write_chore(chore, "next", source=source)
+
+    def write_chore(self, chore: str, person: str, source: CommandSource = "system") -> ChoreCommandResult:
         del source
         chore_definition = self.normalize_chore(chore)
         if chore_definition is None:
@@ -106,11 +116,30 @@ class ChoresService:
             )
 
         current_index = self._get_chore_index(chore_definition)
-        next_index = (current_index + 1) % len(self.participants)
+        target_index = self._target_person_index(person, current_index)
+        if target_index is None:
+            return ChoreCommandResult(
+                ok=False,
+                message=(
+                    "Please use 'next' or one of these names: "
+                    f"{', '.join(participant.display_name for participant in self.participants)}."
+                ),
+                status=self.get_status(),
+                chore_id=chore_definition.id,
+                chore_display_name=chore_definition.display_name,
+            )
+
         previous_person = self.participants[current_index]
-        next_person = self.participants[next_index]
-        self._set_chore_index(chore_definition, next_index)
-        self.save_state()
+        next_person = self.participants[target_index]
+        state_changed = current_index != target_index
+        if state_changed:
+            self._set_chore_index(chore_definition, target_index)
+            self.save_state()
+
+        if state_changed:
+            message = f"It's {next_person.display_name}'s turn to do the {chore_definition.display_name}"
+        else:
+            message = f"{next_person.display_name} is already assigned to the {chore_definition.display_name}"
 
         return ChoreCommandResult(
             ok=True,
@@ -120,8 +149,9 @@ class ChoresService:
             previous_person_display_name=previous_person.display_name,
             next_person_id=next_person.id,
             next_person_display_name=next_person.display_name,
-            message=f"It's {next_person.display_name}'s turn to do the {chore_definition.display_name}",
+            message=message,
             status=self.get_status(),
+            state_changed=state_changed,
         )
 
     def set_audio_enabled(self, enabled: bool, source: CommandSource = "system") -> ChoreCommandResult:
@@ -177,6 +207,15 @@ class ChoresService:
         state = asdict(self.state)
         state[chore.state_field] = value
         self.state = ChoresState(**state)
+
+    def _target_person_index(self, person: str, current_index: int) -> int | None:
+        content = person.strip().casefold()
+        if content == "next":
+            return (current_index + 1) % len(self.participants)
+        for index, participant in enumerate(self.participants):
+            if content in {participant.id.casefold(), participant.display_name.casefold()}:
+                return index
+        return None
 
     def _data_path(self) -> Path:
         return Path(self.data_dir) / self.__class__.data_file

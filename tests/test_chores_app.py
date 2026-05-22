@@ -30,16 +30,71 @@ def test_status_reports_assignments_without_external_services(isolated_data_dir)
     ]
 
 
+def test_read_chores_reports_canonical_assignments(isolated_data_dir):
+    app = ChoresService()
+
+    assert app.read_chores() == (
+        ("dishwasher", "isabelle"),
+        ("kitchen_trash", "isabelle"),
+        ("wednesday_trash", "isabelle"),
+    )
+
+
 def test_mark_chore_done_rotates_assignment(isolated_data_dir):
     app = ChoresService()
 
     result = app.mark_chore_done("dishwasher", source="test")
 
     assert result.ok
+    assert result.state_changed
     assert result.chore_id == "dishwasher"
     assert result.previous_person_display_name == "Isabelle"
     assert result.next_person_display_name == "Guido"
     assert app.state == ChoresState(1, 0, 0)
+
+
+def test_write_chore_next_rotates_assignment(isolated_data_dir):
+    app = ChoresService()
+
+    result = app.write_chore("dishwasher", "next", source="test")
+
+    assert result.ok
+    assert result.state_changed
+    assert result.previous_person_display_name == "Isabelle"
+    assert result.next_person_display_name == "Guido"
+    assert app.state == ChoresState(1, 0, 0)
+
+
+def test_write_chore_assigns_specific_person(isolated_data_dir):
+    app = ChoresService()
+
+    result = app.write_chore("dishwasher", "charlotte", source="test")
+
+    assert result.ok
+    assert result.state_changed
+    assert result.previous_person_display_name == "Isabelle"
+    assert result.next_person_display_name == "Charlotte"
+    assert app.state == ChoresState(3, 0, 0)
+
+
+def test_write_chore_to_current_person_is_noop(isolated_data_dir):
+    app = ChoresService()
+
+    result = app.write_chore("dishwasher", "isabelle", source="test")
+
+    assert result.ok
+    assert not result.state_changed
+    assert result.message == "Isabelle is already assigned to the Dishwasher"
+    assert app.state == ChoresState(0, 0, 0)
+
+
+def test_write_chore_rejects_unknown_person(isolated_data_dir):
+    app = ChoresService()
+
+    result = app.write_chore("dishwasher", "zach", source="test")
+
+    assert not result.ok
+    assert app.state == ChoresState(0, 0, 0)
 
 
 def test_wednesday_trash_alias_matches_wednesday_chore(isolated_data_dir):

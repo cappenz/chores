@@ -21,7 +21,13 @@ class AppChoresApi:
         self.reachy = reachy
 
     def mark_chore_done(self, chore: str, source: str = "speech") -> ChoreCommandResult:
-        result = self.chores.mark_chore_done(chore, source=source)
+        return self.write_chore(chore, "next", source=source)
+
+    def read_chores(self) -> tuple[tuple[str, str], ...]:
+        return self.chores.read_chores()
+
+    def write_chore(self, chore: str, person: str, source: str = "speech") -> ChoreCommandResult:
+        result = self.chores.write_chore(chore, person, source=source)
         asyncio.create_task(self.after_result(result))
         if self.bot:
             asyncio.create_task(self.bot.send_reply(format_result_for_discord(self.chores, result)))
@@ -43,7 +49,13 @@ def main() -> None:
     async def after_result(result: ChoreCommandResult) -> None:
         if screen:
             screen.refresh(chores.get_status())
-        if result.ok and chores.get_audio_enabled() and result.chore_display_name and result.next_person_display_name:
+        if (
+            result.ok
+            and result.state_changed
+            and chores.get_audio_enabled()
+            and result.chore_display_name
+            and result.next_person_display_name
+        ):
             await generate_and_play_audio_async(result.chore_display_name, result.next_person_display_name)
 
     def refresh_screen() -> None:
