@@ -15,6 +15,10 @@ from core.people import PeopleRegistry
 ScreenCommandSink = Callable[[str], Awaitable[None] | None]
 AudioToggleSink = Callable[[bool], Awaitable[None] | None]
 
+AVATAR_SIZE = 300
+HEADER_CALENDAR_FONT_SIZE = 96
+HEADER_DATETIME_FONT_SIZE = 40
+
 
 class Screen:
     def __init__(
@@ -34,17 +38,54 @@ class Screen:
         self.speech_active = False
         window.configure(bg="#f5f5f5")
 
-        main_frame = tk.Frame(window, bg="#f5f5f5", padx=40, pady=70)
+        main_frame = tk.Frame(window, bg="#f5f5f5", padx=40, pady=40)
         main_frame.pack(expand=True, fill="both")
 
-        self.time_label = tk.Label(
-            main_frame,
-            text="Today is ...",
-            font=("Helvetica", 48, "bold"),
+        top_frame = tk.Frame(main_frame, bg="#f5f5f5")
+        top_frame.pack(fill="x", pady=(0, 40))
+        top_frame.columnconfigure(0, weight=1)
+        top_frame.columnconfigure(1, weight=1)
+        self.top_frame = top_frame
+
+        left_header = tk.Frame(top_frame, bg="#f5f5f5")
+        left_header.grid(row=0, column=0, sticky="nw")
+        self.left_header = left_header
+
+        tk.Label(
+            left_header,
+            text="📅",
+            font=("Helvetica", HEADER_CALENDAR_FONT_SIZE),
             bg="#f5f5f5",
             fg="#333333",
+        ).pack(side=tk.LEFT, padx=(0, 24))
+
+        datetime_block = tk.Frame(left_header, bg="#f5f5f5")
+        datetime_block.pack(side=tk.LEFT, anchor="w")
+
+        self.date_label = tk.Label(
+            datetime_block,
+            text="...",
+            font=("Helvetica", HEADER_DATETIME_FONT_SIZE, "bold"),
+            bg="#f5f5f5",
+            fg="#333333",
+            anchor="w",
         )
-        self.time_label.pack(anchor="center", pady=(0, 100))
+        self.date_label.pack(anchor="w")
+
+        self.time_text_label = tk.Label(
+            datetime_block,
+            text="...",
+            font=("Helvetica", HEADER_DATETIME_FONT_SIZE, "bold"),
+            bg="#f5f5f5",
+            fg="#333333",
+            anchor="w",
+        )
+        self.time_text_label.pack(anchor="w")
+
+        self.right_header = tk.Frame(top_frame, bg="#f5f5f5")
+        self.right_header.grid(row=0, column=1, sticky="nsew")
+
+        top_frame.bind("<Configure>", self._on_top_frame_configure)
 
         chores_row = tk.Frame(main_frame, bg="#f5f5f5")
         chores_row.pack(fill="x", expand=True)
@@ -118,7 +159,8 @@ class Screen:
     def refresh(self, status: ChoresStatus) -> None:
         self.audio_enabled = status.audio_enabled
         now = datetime.datetime.now()
-        self.time_label.config(text=now.strftime("%m/%d/%Y %I:%M:%S %p"))
+        self.date_label.config(text=self._format_date_line(now))
+        self.time_text_label.config(text=self._format_time_line(now))
         self.audio_button.config(text=self._audio_button_text())
 
         for index, assignment in enumerate(status.assignments):
@@ -166,6 +208,16 @@ class Screen:
         self.audio_button.config(text=self._audio_button_text())
         self.audio_button.update()
 
+    def _on_top_frame_configure(self, event: tk.Event) -> None:
+        if event.widget is not self.top_frame:
+            return
+        inset = self._avatar_column_inset(event.width)
+        self.left_header.grid_configure(padx=(inset, 0))
+
+    @staticmethod
+    def _avatar_column_inset(row_width: int, column_count: int = 3) -> int:
+        return max(0, (row_width // column_count - AVATAR_SIZE) // 2)
+
     def _make_click_handler(self, chore_id: str):
         def handler(event) -> None:
             del event
@@ -183,12 +235,21 @@ class Screen:
 
     @staticmethod
     def _title_for_chore(chore_id: str, display_name: str) -> str:
-        icons = {
-            "dishwasher": "🍽️",
-            "kitchen_trash": "🗑️",
-            "wednesday_trash": "🌳",
+        display_titles = {
+            "dishwasher": ("🍽️", "Dishwasher"),
+            "kitchen_trash": ("🗑️", "Kitchen"),
+            "wednesday_trash": ("🚛", "Trashcans"),
         }
-        return f"{icons.get(chore_id, '')} {display_name}".strip()
+        icon, label = display_titles.get(chore_id, ("", display_name))
+        return f"{icon} {label}".strip()
+
+    @staticmethod
+    def _format_date_line(when: datetime.datetime) -> str:
+        return when.strftime("%B %-d, %Y")
+
+    @staticmethod
+    def _format_time_line(when: datetime.datetime) -> str:
+        return when.strftime("%H:%M:%S")
 
     @staticmethod
     def _crop_square(image: Image.Image) -> Image.Image:
