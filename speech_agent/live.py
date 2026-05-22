@@ -180,7 +180,7 @@ class AudioLoop:
                     for function_call in response.tool_call.function_calls:
                         if not function_call.id:
                             continue
-                        result = handle_tool_call(
+                        result = await handle_tool_call(
                             function_call.name or "",
                             function_call.args or {},
                             self.chores,

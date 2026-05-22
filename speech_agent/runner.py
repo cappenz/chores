@@ -6,7 +6,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
 from speech_agent.live import run_live
-from speech_agent.tools import SpeechChoresApi
+from speech_agent.tools import SpeechChoresApi, reset_web_search_counter
 from speech_agent.wake import wait_for_wake_word
 
 DEFAULT_WAKE_MODEL = "hey_jarvis"
@@ -38,6 +38,7 @@ async def run_speech_agent(chores: SpeechChoresApi, config: SpeechAgentConfig) -
 
     while True:
         await _wait_for_wake_word_with_retries(config)
+        reset_web_search_counter()
         await _notify_connection(config.on_assistant_awake, True)
         client = genai.Client(http_options={"api_version": "v1alpha"})
         try:
