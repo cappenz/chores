@@ -331,7 +331,7 @@ class RetryingReachyCompanion:
     async def _run_on_companion(self, action) -> None:
         if self._closed:
             return
-        companion = await self._get_or_connect()
+        companion = await self._get_or_connect(apply_desired_state=False)
         if companion is None:
             self._ensure_retry_loop()
             return
@@ -343,7 +343,7 @@ class RetryingReachyCompanion:
                 await self._disconnect()
                 self._ensure_retry_loop()
 
-    async def _get_or_connect(self) -> SdkReachyCompanion | None:
+    async def _get_or_connect(self, *, apply_desired_state: bool = True) -> SdkReachyCompanion | None:
         async with self._lock:
             if self._closed:
                 return None
@@ -362,7 +362,8 @@ class RetryingReachyCompanion:
             else:
                 print("[reachy] Reconnected to daemon", flush=True)
             self._retry_started_at = None
-        await self._apply_desired_state()
+        if apply_desired_state:
+            await self._apply_desired_state()
         return self._companion
 
     async def _apply_desired_state(self) -> None:

@@ -107,6 +107,27 @@ def test_retrying_companion_replays_awake_state_on_connect():
     assert ("enable_motors",) in mini.calls
 
 
+def test_retrying_companion_sleep_on_first_connect_runs_once():
+    mini = FakeMini()
+    sdk = SdkReachyCompanion(
+        mini,
+        create_head_pose=fake_head_pose,
+        config=ReachyConfig(enabled=True, face_tracking_enabled=False),
+    )
+    companion = RetryingReachyCompanion(
+        ReachyConfig(enabled=True, face_tracking_enabled=False, connect_retry_seconds=0.01)
+    )
+
+    async def run() -> None:
+        with patch("reachy.companion._create_sdk_companion", return_value=sdk):
+            await companion.sleep()
+            await companion.close()
+
+    asyncio.run(run())
+
+    assert mini.calls.count(("goto_sleep",)) == 1
+
+
 def test_noop_companion_methods_are_async_safe():
     companion = NoOpReachyCompanion()
 
