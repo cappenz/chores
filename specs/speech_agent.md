@@ -57,7 +57,7 @@ The runner should accept a chore-facing API rather than concrete Discord or disp
 
 ## Gemini Tools
 
-The chore tools are:
+The Gemini tools are:
 
 - tool name: `read_chores`
 - arguments: none
@@ -66,6 +66,24 @@ The chore tools are:
 - tool name: `write_chore`
 - arguments: canonical chore id and `person`, where `person` is either a chore participant id or `next`
 - behavior: validate the chore and person, call the chore domain API, persist state changes, and return a short result string to Gemini
+
+- tool name: `start_timer`
+- arguments: `time_period` and `name`
+- behavior: start one kitchen timer through the app API and return a short result string to Gemini
+
+- tool name: `read_timer`
+- arguments: none
+- behavior: return the active kitchen timer and time left, or report that no timer is active
+
+- tool name: `stop_timer`
+- arguments: none
+- behavior: stop the active kitchen timer and stop repeated timer-finished announcements
+
+## Internal Assistant Events
+
+The speech runner can receive app-owned `AssistantEvent` prompts while a Gemini Live session is active. Timer-finished events use this channel to ask Gemini to announce the finished timer mid-session. These events are not Gemini tools; they are app-to-session prompts serialized by the Live loop.
+
+When a kitchen timer is active, the idle watchdog should not return to wake-word mode. Explicit stop/sleep phrases still end the current Live session.
 
 ## Configuration
 

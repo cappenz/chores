@@ -5,19 +5,35 @@ import os
 import sys
 
 from chores import ChoreCommandResult, ChoresService
-from core.audio_announcements import generate_and_play_audio_async
+from core.audio_announcements import generate_and_play_audio_async, generate_and_play_timer_audio_async
 from core.people import load_people
 from discord_bot import ChoresBot, format_result_for_discord
-from display import create_screen
+from display import ScreenStatus, create_screen
+from kitchen_timer import (
+    KitchenTimerEvent,
+    KitchenTimerService,
+    KitchenTimerStatus,
+    format_remaining,
+)
 from reachy import ReachyConfig, run_reachy_companion
-from speech_agent import SpeechAgentConfig, run_speech_agent
+from speech_agent import AssistantEvent, SpeechAgentConfig, run_speech_agent
 
 
 class AppChoresApi:
-    def __init__(self, chores: ChoresService, bot: ChoresBot | None, after_result, reachy) -> None:
+    def __init__(
+        self,
+        chores: ChoresService,
+        kitchen_timer: KitchenTimerService,
+        bot: ChoresBot | None,
+        after_result,
+        after_timer_change,
+        reachy,
+    ) -> None:
         self.chores = chores
+        self.kitchen_timer = kitchen_timer
         self.bot = bot
         self.after_result = after_result
+        self.after_timer_change = after_timer_change
         self.reachy = reachy
 
     def mark_chore_done(self, chore: str, source: str = "speech") -> ChoreCommandResult:
@@ -39,16 +55,31 @@ class AppChoresApi:
     def show_emotion(self, emotion: str) -> None:
         asyncio.create_task(self.reachy.show_emotion(emotion))
 
+    def start_timer(self, time_period: str, name: str) -> str:
+        result = self.kitchen_timer.start_timer(time_period, name)
+        self.after_timer_change()
+        return result.message
+
+    def read_timer(self) -> str:
+        return self.kitchen_timer.read_timer().message
+
+    def stop_timer(self) -> str:
+        result = self.kitchen_timer.stop_timer()
+        self.after_timer_change()
+        return result.message
+
 
 def main() -> None:
     people = load_people()
     chores = ChoresService(people=people)
+    kitchen_timer = KitchenTimerService()
+    assistant_events: asyncio.Queue[AssistantEvent] = asyncio.Queue()
     bot: ChoresBot | None = None
+    gemini_active = False
     reachy = run_reachy_companion(_reachy_config_from_env())
 
     async def after_result(result: ChoreCommandResult) -> None:
-        if screen:
-            screen.refresh(chores.get_status())
+        refresh_screen_without_pump()
         if (
             result.ok
             and result.state_changed
@@ -61,7 +92,16 @@ def main() -> None:
     def refresh_screen() -> None:
         if screen:
             screen.refresh(chores.get_status())
+            screen.set_status(_screen_status_from_timer(kitchen_timer.get_status()))
             screen.pump()
+
+    def refresh_screen_without_pump() -> None:
+        if screen:
+            screen.refresh(chores.get_status())
+            screen.set_status(_screen_status_from_timer(kitchen_timer.get_status()))
+
+    def after_timer_change() -> None:
+        refresh_screen_without_pump()
 
     def on_screen_chore_done(chore_id: str) -> None:
         if bot:
@@ -71,6 +111,8 @@ def main() -> None:
         chores.set_audio_enabled(enabled, source="display")
 
     def on_gemini_connection_active(active: bool) -> None:
+        nonlocal gemini_active
+        gemini_active = active
         if screen:
             screen.set_speech_active(active)
 
@@ -83,15 +125,43 @@ def main() -> None:
     async def on_assistant_speaking(active: bool) -> None:
         await reachy.set_speaking(active)
 
+    async def watch_kitchen_timer() -> None:
+        nonlocal gemini_active
+        while True:
+            event = await kitchen_timer.events().get()
+            refresh_screen_without_pump()
+            if event.kind == "wake_soon":
+                await reachy.wake()
+                continue
+            if event.kind not in {"finished", "repeat_finished"} or event.status is None:
+                continue
+
+            await reachy.wake()
+            assistant_event = _assistant_event_for_timer(event)
+            if gemini_active:
+                assistant_events.put_nowait(assistant_event)
+            else:
+                await generate_and_play_timer_audio_async(event.status.name)
+
     async def start_speech_agent() -> None:
         await prepare_reachy_for_startup(reachy)
+        asyncio.create_task(watch_kitchen_timer())
         asyncio.create_task(
             run_speech_agent(
-                AppChoresApi(chores, bot, after_result, reachy),
+                AppChoresApi(
+                    chores,
+                    kitchen_timer,
+                    bot,
+                    after_result,
+                    after_timer_change,
+                    reachy,
+                ),
                 SpeechAgentConfig(
                     on_gemini_connection_active=on_gemini_connection_active,
                     on_assistant_awake=on_assistant_awake,
                     on_assistant_speaking=on_assistant_speaking,
+                    assistant_events=assistant_events,
+                    timer_active=kitchen_timer.is_active,
                 ),
             )
         )
@@ -122,6 +192,28 @@ def main() -> None:
 
 async def prepare_reachy_for_startup(reachy) -> None:
     await reachy.sleep()
+
+
+def _screen_status_from_timer(status: KitchenTimerStatus | None) -> ScreenStatus | None:
+    if status is None:
+        return None
+    return ScreenStatus(
+        title=status.name,
+        value=format_remaining(status.remaining_seconds),
+        highlighted=True,
+    )
+
+
+def _assistant_event_for_timer(event: KitchenTimerEvent) -> AssistantEvent:
+    assert event.status is not None
+    kind = "timer_repeat" if event.kind == "repeat_finished" else "timer_finished"
+    return AssistantEvent(
+        kind,
+        (
+            f"The kitchen timer named {event.status.name!r} is finished. "
+            "Announce that it is finished now. Keep it short and natural."
+        ),
+    )
 
 
 def _reachy_config_from_env() -> ReachyConfig:

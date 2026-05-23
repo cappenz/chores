@@ -3,6 +3,7 @@ from __future__ import annotations
 import datetime
 import asyncio
 from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -18,6 +19,13 @@ AudioToggleSink = Callable[[bool], Awaitable[None] | None]
 AVATAR_SIZE = 300
 HEADER_CALENDAR_FONT_SIZE = 96
 HEADER_DATETIME_FONT_SIZE = 40
+
+
+@dataclass(frozen=True)
+class ScreenStatus:
+    title: str
+    value: str
+    highlighted: bool = True
 
 
 class Screen:
@@ -84,6 +92,32 @@ class Screen:
 
         self.right_header = tk.Frame(top_frame, bg="#f5f5f5")
         self.right_header.grid(row=0, column=1, sticky="nsew")
+        self.status_frame = tk.Frame(
+            self.right_header,
+            bg="#333333",
+            highlightthickness=0,
+            bd=0,
+        )
+        self.status_inner_frame = tk.Frame(self.status_frame, bg="#f5f5f5", padx=18, pady=8)
+        self.status_inner_frame.pack(fill="both", expand=True, padx=3, pady=3)
+        self.status_title_label = tk.Label(
+            self.status_inner_frame,
+            text="",
+            font=("Helvetica", HEADER_DATETIME_FONT_SIZE, "bold"),
+            bg="#f5f5f5",
+            fg="#333333",
+            anchor="w",
+        )
+        self.status_title_label.pack(anchor="w")
+        self.status_value_label = tk.Label(
+            self.status_inner_frame,
+            text="",
+            font=("Helvetica", HEADER_DATETIME_FONT_SIZE, "bold"),
+            bg="#f5f5f5",
+            fg="#333333",
+            anchor="w",
+        )
+        self.status_value_label.pack(anchor="w")
 
         top_frame.bind("<Configure>", self._on_top_frame_configure)
 
@@ -169,6 +203,17 @@ class Screen:
 
     async def play_audio(self, audio: Any) -> None:
         del audio
+
+    def set_status(self, status: ScreenStatus | None) -> None:
+        if status is None:
+            self.status_frame.pack_forget()
+            return
+
+        border_color = "#333333" if status.highlighted else "#f5f5f5"
+        self.status_frame.config(bg=border_color)
+        self.status_title_label.config(text=status.title)
+        self.status_value_label.config(text=status.value)
+        self.status_frame.pack(anchor="ne", padx=(0, 40))
 
     def set_speech_active(self, active: bool) -> None:
         if self.speech_active == active:

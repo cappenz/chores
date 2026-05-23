@@ -45,3 +45,10 @@ async def generate_and_play_audio_async(chore_name: str, chore_person: str) -> N
     except Exception as error:
         print(f"Error generating or playing audio: {error}")
 
+
+async def generate_and_play_timer_audio_async(timer_name: str) -> None:
+    try:
+        await asyncio.to_thread(generate_audio, f"The {timer_name} timer is finished.")
+    except Exception as error:
+        print(f"Error generating or playing timer audio: {error}")
+

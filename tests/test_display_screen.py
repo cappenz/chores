@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import datetime
 
-from display.screen import Screen
+from display.screen import Screen, ScreenStatus
 
 
 def test_title_for_chore_uses_display_only_labels():
@@ -20,3 +20,11 @@ def test_format_date_and_time_lines():
 
     assert Screen._format_date_line(when) == "May 22, 2026"
     assert Screen._format_time_line(when) == "13:14:15"
+
+
+def test_screen_status_is_layout_independent_status_model():
+    status = ScreenStatus(title="Pizza is Ready", value="12:34")
+
+    assert status.title == "Pizza is Ready"
+    assert status.value == "12:34"
+    assert status.highlighted

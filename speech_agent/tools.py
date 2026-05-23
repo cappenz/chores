@@ -34,6 +34,15 @@ class SpeechChoresApi(Protocol):
     def show_emotion(self, emotion: str):
         ...
 
+    def start_timer(self, time_period: str, name: str) -> str:
+        ...
+
+    def read_timer(self) -> str:
+        ...
+
+    def stop_timer(self) -> str:
+        ...
+
 
 def build_tools() -> list[dict]:
     return [
@@ -113,6 +122,41 @@ def build_tools() -> list[dict]:
                         "required": ["queries"],
                     },
                 },
+                {
+                    "name": "start_timer",
+                    "description": (
+                        "Start one kitchen timer. Use this when the user asks to set, start, "
+                        "or create a timer. There can only be one active timer at a time."
+                    ),
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "time_period": {
+                                "type": "string",
+                                "description": (
+                                    "Timer duration, preferably MM:SS or HH:MM:SS, for example "
+                                    "15:00 for fifteen minutes."
+                                ),
+                            },
+                            "name": {
+                                "type": "string",
+                                "description": "Short timer description, for example Pizza is Ready.",
+                            },
+                        },
+                        "required": ["time_period", "name"],
+                    },
+                },
+                {
+                    "name": "read_timer",
+                    "description": "Read the active kitchen timer and say how much time is left.",
+                },
+                {
+                    "name": "stop_timer",
+                    "description": (
+                        "Stop the active kitchen timer. Use this when the user asks to cancel, "
+                        "delete, silence, or stop the timer."
+                    ),
+                },
             ]
         }
     ]
@@ -140,6 +184,17 @@ async def handle_tool_call(name: str, args: dict, chores: SpeechChoresApi) -> st
     if name == "web_search":
         queries = _coerce_queries(args.get("queries"))
         return await asyncio.to_thread(web_search, queries)
+
+    if name == "start_timer":
+        time_period = str(args.get("time_period", ""))
+        timer_name = str(args.get("name", ""))
+        return chores.start_timer(time_period, timer_name)
+
+    if name == "read_timer":
+        return chores.read_timer()
+
+    if name == "stop_timer":
+        return chores.stop_timer()
 
     return f"unknown tool: {name}"
 

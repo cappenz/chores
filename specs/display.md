@@ -19,7 +19,7 @@ The screen targets a 1280 x 800 window. The main content area uses horizontal pa
 
 - **Top row (two equal columns):**
   - **Left:** large calendar emoji (`📅`) beside two lines: formatted date (`May 22, 2026`) and 24-hour time (`13:14:15`). No `Date:` or `Time:` prefixes. The block is inset so its left edge aligns with the left edge of the centered 300px avatar in the first chore column below.
-  - **Right:** reserved for announcements or timers (for example, a pizza timer); currently blank until those widgets are implemented.
+  - **Right:** renders the optional semantic screen status card. The current placement is top right, but callers should use the status API rather than depending on this layout.
 - **Chore row (three equal columns):** each column shows a display-only chore title, a clickable person image, and the assignee name.
 
 Display-only chore titles (domain display names may differ for speech/Discord):
@@ -46,6 +46,7 @@ The Screen component should expose an async-friendly runner and a narrow interfa
 
 - `run_screen(commands: ScreenCommandSink, state: ScreenStateSource) -> Awaitable[None]`: start the Tk screen runner and emit user commands through the provided command sink.
 - `refresh(status: ChoresStatus) -> None`: redraw chore assignments, labels, and local state from the latest domain status.
+- `set_status(status: ScreenStatus | None) -> None`: show or clear a general status card. Timer state is one producer, but the API is not timer-specific.
 - `set_speech_active(active: bool) -> None`: show whether the Gemini Live connection is currently active.
 - `play_audio(audio: AudioPayload) -> Awaitable[None]`: play already-generated audio through the screen speaker.
 - `close() -> None`: stop the screen runner and release local UI resources.

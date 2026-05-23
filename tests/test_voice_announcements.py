@@ -54,3 +54,16 @@ def test_audio_orchestration_uses_mocked_generation(monkeypatch):
         ("speech", "dishwasher", "Guido"),
         ("audio", "Test announcement"),
     ]
+
+
+def test_timer_audio_uses_timer_name(monkeypatch):
+    calls = []
+
+    def fake_generate_audio(text: str) -> None:
+        calls.append(("audio", text))
+
+    monkeypatch.setattr(audio_announcements, "generate_audio", fake_generate_audio)
+
+    asyncio.run(audio_announcements.generate_and_play_timer_audio_async("Pizza"))
+
+    assert calls == [("audio", "The Pizza timer is finished.")]

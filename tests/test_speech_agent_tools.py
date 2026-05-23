@@ -22,6 +22,9 @@ def test_speech_agent_owns_gemini_tool_definitions():
         "read_chores",
         "write_chore",
         "web_search",
+        "start_timer",
+        "read_timer",
+        "stop_timer",
     }
 
 
@@ -82,6 +85,21 @@ def test_web_search_tool_accepts_queries():
     assert queries["type"] == "array"
     assert queries["items"]["type"] == "string"
     assert search_tool["parameters"]["required"] == ["queries"]
+
+
+def test_timer_tool_accepts_duration_and_name():
+    tools = build_tools()
+    timer_tool = next(
+        declaration
+        for declaration in tools[0]["function_declarations"]
+        if declaration["name"] == "start_timer"
+    )
+
+    parameters = timer_tool["parameters"]
+
+    assert parameters["properties"]["time_period"]["type"] == "string"
+    assert parameters["properties"]["name"]["type"] == "string"
+    assert parameters["required"] == ["time_period", "name"]
 
 
 def test_speech_agent_uses_schedar_voice():
@@ -180,6 +198,15 @@ def test_speech_emotion_tool_delegates_to_app_api():
         def show_emotion(self, emotion: str):
             self.emotions.append(emotion)
 
+        def start_timer(self, time_period: str, name: str) -> str:
+            raise AssertionError("start_timer should not be called")
+
+        def read_timer(self) -> str:
+            raise AssertionError("read_timer should not be called")
+
+        def stop_timer(self) -> str:
+            raise AssertionError("stop_timer should not be called")
+
     chores = FakeChores()
 
     result = asyncio.run(handle_tool_call("show_emotion", {"emotion": "happy"}, chores))
@@ -265,6 +292,15 @@ def test_web_search_tool_dispatches(monkeypatch):
         def show_emotion(self, emotion: str):
             raise AssertionError("show_emotion should not be called")
 
+        def start_timer(self, time_period: str, name: str) -> str:
+            raise AssertionError("start_timer should not be called")
+
+        def read_timer(self) -> str:
+            raise AssertionError("read_timer should not be called")
+
+        def stop_timer(self) -> str:
+            raise AssertionError("stop_timer should not be called")
+
     monkeypatch.setattr(
         "speech_agent.tools.web_search",
         lambda queries: f"searched {queries}",
@@ -275,3 +311,49 @@ def test_web_search_tool_dispatches(monkeypatch):
     )
 
     assert result == "searched ['test']"
+
+
+def test_timer_tools_delegate_to_app_api():
+    class FakeChores:
+        def __init__(self):
+            self.calls = []
+
+        def read_chores(self):
+            raise AssertionError("read_chores should not be called")
+
+        def write_chore(self, chore: str, person: str, source: str = "speech"):
+            raise AssertionError("write_chore should not be called")
+
+        def mark_chore_done(self, chore: str, source: str = "speech"):
+            raise AssertionError("mark_chore_done should not be called")
+
+        def get_status(self):
+            return None
+
+        def show_emotion(self, emotion: str):
+            raise AssertionError("show_emotion should not be called")
+
+        def start_timer(self, time_period: str, name: str) -> str:
+            self.calls.append(("start", time_period, name))
+            return "started"
+
+        def read_timer(self) -> str:
+            self.calls.append(("read",))
+            return "read"
+
+        def stop_timer(self) -> str:
+            self.calls.append(("stop",))
+            return "stopped"
+
+    chores = FakeChores()
+
+    assert asyncio.run(
+        handle_tool_call("start_timer", {"time_period": "15:00", "name": "Pizza"}, chores)
+    ) == "started"
+    assert asyncio.run(handle_tool_call("read_timer", {}, chores)) == "read"
+    assert asyncio.run(handle_tool_call("stop_timer", {}, chores)) == "stopped"
+    assert chores.calls == [
+        ("start", "15:00", "Pizza"),
+        ("read",),
+        ("stop",),
+    ]

@@ -13,6 +13,7 @@ from speech_agent.audio import (
     _output_device_info,
     pcm_rms_int16,
 )
+from speech_agent.events import AssistantEvent
 from speech_agent.tools import SpeechChoresApi, build_tools, handle_tool_call
 
 MIC_MIME = "audio/pcm;rate=16000"
@@ -25,6 +26,7 @@ VOICE_NAME = "Schedar"
 GEMINI_SESSION_CLOSE_TIMEOUT_SECONDS = 2.0
 ConnectionCallback = Callable[[bool], Awaitable[None] | None]
 TextCallback = Callable[[str], Awaitable[None] | None]
+TimerActiveCallback = Callable[[], bool]
 INITIAL_GREETING_PROMPT = "Greet the family now. Say only: Hello!"
 SYSTEM_INSTRUCTION = """
 You are the helpful kitchen voice assistant for the Appenzeller family.
@@ -73,6 +75,8 @@ class AudioLoop:
         idle_timeout_seconds: float,
         on_assistant_speaking: ConnectionCallback | None = None,
         on_assistant_response_text: TextCallback | None = None,
+        assistant_events: asyncio.Queue[AssistantEvent] | None = None,
+        timer_active: TimerActiveCallback | None = None,
     ) -> None:
         self.session = session
         self.chores = chores
@@ -92,7 +96,10 @@ class AudioLoop:
         self._mic_reopen_task: asyncio.Task | None = None
         self.on_assistant_speaking = on_assistant_speaking
         self.on_assistant_response_text = on_assistant_response_text
+        self.assistant_events = assistant_events
+        self.timer_active = timer_active
         self._assistant_speaking = False
+        self._session_send_lock = asyncio.Lock()
 
     async def run(self) -> None:
         self.audio_in_queue = asyncio.Queue()
@@ -106,6 +113,8 @@ class AudioLoop:
                 asyncio.create_task(self.play_audio()),
                 asyncio.create_task(self.idle_watchdog()),
             ]
+            if self.assistant_events is not None:
+                tasks.append(asyncio.create_task(self.process_assistant_events()))
             done, _pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
             for task in done:
                 exc = task.exception()
@@ -160,7 +169,8 @@ class AudioLoop:
         assert self.out_queue is not None
         while True:
             msg = await self.out_queue.get()
-            await self.session.send_realtime_input(audio=msg)
+            async with self._session_send_lock:
+                await self.session.send_realtime_input(audio=msg)
             self._send_chunks += 1
             if self.debug and self._send_chunks % 50 == 0:
                 data = msg.get("data") or b""
@@ -193,7 +203,8 @@ class AudioLoop:
                             )
                         )
                     if function_responses:
-                        await self.session.send_tool_response(function_responses=function_responses)
+                        async with self._session_send_lock:
+                            await self.session.send_tool_response(function_responses=function_responses)
                         sent_tool_response = True
                         break
 
@@ -237,8 +248,26 @@ class AudioLoop:
             await asyncio.sleep(min(self.idle_timeout_seconds, 5.0))
             idle_for = time.monotonic() - self._last_user_activity
             if idle_for >= self.idle_timeout_seconds:
+                if self.timer_active is not None and self.timer_active():
+                    self._last_user_activity = time.monotonic()
+                    continue
                 self.stop_reason = f"idle timeout after {self.idle_timeout_seconds:.0f}s"
                 raise ListeningComplete()
+
+    async def process_assistant_events(self) -> None:
+        assert self.assistant_events is not None
+        while True:
+            event = await self.assistant_events.get()
+            if not event.prompt.strip():
+                continue
+            async with self._session_send_lock:
+                await self.session.send_client_content(
+                    turns={
+                        "role": "user",
+                        "parts": [{"text": event.prompt}],
+                    },
+                    turn_complete=True,
+                )
 
     async def play_audio(self) -> None:
         assert self.audio_in_queue is not None
@@ -305,6 +334,8 @@ async def run_live(
     on_connection_active: ConnectionCallback | None = None,
     on_assistant_speaking: ConnectionCallback | None = None,
     on_assistant_response_text: TextCallback | None = None,
+    assistant_events: asyncio.Queue[AssistantEvent] | None = None,
+    timer_active: TimerActiveCallback | None = None,
 ) -> None:
     last_error: BaseException | None = None
     session = None
@@ -340,6 +371,8 @@ async def run_live(
             idle_timeout_seconds=idle_timeout_seconds,
             on_assistant_speaking=on_assistant_speaking,
             on_assistant_response_text=on_assistant_response_text,
+            assistant_events=assistant_events,
+            timer_active=timer_active,
         )
         try:
             await loop.run()

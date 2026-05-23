@@ -20,6 +20,7 @@ The software is organized around these top-level directories:
 - `display/`: Tk UI component.
 - `discord_bot/`: Discord component.
 - `speech_agent/`: wake-word and Gemini Live component.
+- `kitchen_timer/`: single active kitchen timer state, scheduling, and timer events.
 - `reachy/`: Reachy Mini companion component.
 - `core/`: shared infrastructure such as people loading, model invocation, config, message types, logging, and cross-component utilities.
 
@@ -55,6 +56,7 @@ These should run as asyncio tasks under one application supervisor where practic
 - `specs/display.md`: Tk display component.
 - `specs/discord_bot.md`: Discord component.
 - `specs/speech_agent.md`: wake-word and Gemini Live component.
+- `specs/kitchen_timer.md`: kitchen timer state, commands, events, and display snapshots.
 - `specs/reachy.md`: Reachy Mini companion component.
 - `specs/core.md`: shared infrastructure and people data.
 - `specs/audio.md`: generated chore announcement audio.

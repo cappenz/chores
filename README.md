@@ -64,3 +64,4 @@ The app retries daemon connection in the background (`REACHY_CONNECT_RETRY_SECON
 - Displays the current date and time
 - Integrates with Discord for chore management
 - Uses voice announcements for chore assignments
+- Supports one active kitchen timer with screen status and voice announcements
