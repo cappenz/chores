@@ -19,6 +19,10 @@ AudioToggleSink = Callable[[bool], Awaitable[None] | None]
 AVATAR_SIZE = 300
 HEADER_CALENDAR_FONT_SIZE = 96
 HEADER_DATETIME_FONT_SIZE = 40
+HEADER_REGION_HEIGHT = 220
+CHORES_REGION_HEIGHT = 430
+CONTROLS_REGION_HEIGHT = 150
+HORIZONTAL_PADDING = 40
 
 
 @dataclass(frozen=True)
@@ -46,11 +50,11 @@ class Screen:
         self.speech_active = False
         window.configure(bg="#f5f5f5")
 
-        main_frame = tk.Frame(window, bg="#f5f5f5", padx=40, pady=40)
-        main_frame.pack(expand=True, fill="both")
+        header_region = tk.Frame(window, bg="#f5f5f5", padx=HORIZONTAL_PADDING, pady=40)
+        header_region.place(x=0, y=0, relwidth=1.0, height=HEADER_REGION_HEIGHT)
 
-        top_frame = tk.Frame(main_frame, bg="#f5f5f5")
-        top_frame.pack(fill="x", pady=(0, 40))
+        top_frame = tk.Frame(header_region, bg="#f5f5f5")
+        top_frame.pack(fill="x")
         top_frame.columnconfigure(0, weight=1)
         top_frame.columnconfigure(1, weight=1)
         self.top_frame = top_frame
@@ -121,8 +125,16 @@ class Screen:
 
         top_frame.bind("<Configure>", self._on_top_frame_configure)
 
-        chores_row = tk.Frame(main_frame, bg="#f5f5f5")
-        chores_row.pack(fill="x", expand=True)
+        chores_region = tk.Frame(window, bg="#f5f5f5", padx=HORIZONTAL_PADDING)
+        chores_region.place(
+            x=0,
+            y=HEADER_REGION_HEIGHT,
+            relwidth=1.0,
+            height=CHORES_REGION_HEIGHT,
+        )
+
+        chores_row = tk.Frame(chores_region, bg="#f5f5f5")
+        chores_row.pack(fill="x")
         for column in range(3):
             chores_row.columnconfigure(column, weight=1)
 
@@ -164,7 +176,15 @@ class Screen:
             name_label.pack()
             self.chore_names.append(name_label)
 
-        self.controls_frame = tk.Frame(window, bg="#f5f5f5")
+        controls_region = tk.Frame(window, bg="#f5f5f5")
+        controls_region.place(
+            x=0,
+            y=HEADER_REGION_HEIGHT + CHORES_REGION_HEIGHT,
+            relwidth=1.0,
+            height=CONTROLS_REGION_HEIGHT,
+        )
+
+        self.controls_frame = tk.Frame(controls_region, bg="#f5f5f5")
         self.controls_frame.place(relx=1.0, rely=1.0, anchor="se", x=-20, y=-20)
         self.microphone_label = tk.Label(
             self.controls_frame,
