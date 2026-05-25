@@ -185,6 +185,10 @@ class AudioLoop:
         while True:
             sent_tool_response = False
             async for response in self.session.receive():
+                if getattr(response, "go_away", None):
+                    self.stop_reason = "Gemini Live session duration reached"
+                    raise ListeningComplete()
+
                 if response.tool_call and response.tool_call.function_calls:
                     function_responses = []
                     for function_call in response.tool_call.function_calls:

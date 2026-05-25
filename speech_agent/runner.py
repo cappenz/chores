@@ -46,19 +46,27 @@ async def run_speech_agent(chores: SpeechChoresApi, config: SpeechAgentConfig) -
         await _notify_connection(config.on_assistant_awake, True)
         client = genai.Client(http_options={"api_version": "v1alpha"})
         try:
-            await run_live(
-                client,
-                chores,
-                debug=config.debug,
-                input_device_index=config.input_device_index,
-                output_device_index=config.output_device_index,
-                idle_timeout_seconds=config.idle_timeout_seconds,
-                on_connection_active=config.on_gemini_connection_active,
-                on_assistant_speaking=config.on_assistant_speaking,
-                on_assistant_response_text=config.on_assistant_response_text,
-                assistant_events=config.assistant_events,
-                timer_active=config.timer_active,
-            )
+            try:
+                await run_live(
+                    client,
+                    chores,
+                    debug=config.debug,
+                    input_device_index=config.input_device_index,
+                    output_device_index=config.output_device_index,
+                    idle_timeout_seconds=config.idle_timeout_seconds,
+                    on_connection_active=config.on_gemini_connection_active,
+                    on_assistant_speaking=config.on_assistant_speaking,
+                    on_assistant_response_text=config.on_assistant_response_text,
+                    assistant_events=config.assistant_events,
+                    timer_active=config.timer_active,
+                )
+            except Exception as error:
+                if not _is_gemini_session_expiry_error(error):
+                    raise
+                print(
+                    "[listening] Gemini Live session expired; returning to wake-word mode.",
+                    flush=True,
+                )
         finally:
             await _notify_connection(config.on_assistant_awake, False)
         print("[sleeping] Returned to wake-word mode.", flush=True)
@@ -91,6 +99,18 @@ def _genai():
     from google import genai
 
     return genai
+
+
+def _is_gemini_session_expiry_error(error: Exception) -> bool:
+    message = str(error).casefold()
+    return (
+        (
+            "1008" in message
+            and ("goaway" in message or "go away" in message or "go_away" in message)
+        )
+        or ("session duration" in message and ("expired" in message or "expire" in message))
+        or "failed to close the connection after receiving a goaway signal" in message
+    )
 
 
 async def _notify_connection(callback: SpeechConnectionCallback | None, active: bool) -> None:

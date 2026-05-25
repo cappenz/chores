@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+from types import SimpleNamespace
 
 from speech_agent.events import AssistantEvent
-from speech_agent.live import AudioLoop
+from speech_agent.live import AudioLoop, ListeningComplete
 
 
 class FakePyAudioModule:
@@ -79,3 +80,33 @@ def test_idle_watchdog_does_not_sleep_while_timer_active(monkeypatch):
     monkeypatch.setattr("speech_agent.live._pyaudio", lambda: FakePyAudioModule)
 
     assert asyncio.run(scenario())
+
+
+def test_goaway_returns_to_wake_word_mode(monkeypatch):
+    class FakeSession:
+        def receive(self):
+            async def responses():
+                yield SimpleNamespace(go_away=object())
+
+            return responses()
+
+    async def scenario():
+        loop = AudioLoop(
+            FakeSession(),
+            FakeChores(),
+            debug=False,
+            input_device_index=None,
+            output_device_index=None,
+            idle_timeout_seconds=300.0,
+        )
+        loop.audio_in_queue = asyncio.Queue()
+        try:
+            await loop.receive_audio()
+        except ListeningComplete:
+            return loop.stop_reason
+        raise AssertionError("expected ListeningComplete")
+
+    monkeypatch.setattr("speech_agent.live._pyaudio", lambda: FakePyAudioModule)
+    monkeypatch.setattr("speech_agent.live._genai_types", lambda: object())
+
+    assert asyncio.run(scenario()) == "Gemini Live session duration reached"

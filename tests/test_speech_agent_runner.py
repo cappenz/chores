@@ -2,7 +2,11 @@ from __future__ import annotations
 
 import asyncio
 
-from speech_agent.runner import SpeechAgentConfig, _wait_for_wake_word_with_retries
+from speech_agent.runner import (
+    SpeechAgentConfig,
+    _is_gemini_session_expiry_error,
+    _wait_for_wake_word_with_retries,
+)
 from speech_agent.wake import _read_stream_chunk
 
 
@@ -60,3 +64,16 @@ def test_wake_word_read_timeout_becomes_audio_error(monkeypatch):
         assert "timed out" in str(error)
     else:
         raise AssertionError("expected OSError")
+
+
+def test_gemini_session_expiry_error_is_recoverable():
+    error = RuntimeError(
+        "1008 None. Connection aborted because the client failed to close the "
+        "connection after receiving a GoAway signal once the session duration expired"
+    )
+
+    assert _is_gemini_session_expiry_error(error)
+
+
+def test_non_expiry_gemini_error_is_not_recoverable():
+    assert not _is_gemini_session_expiry_error(RuntimeError("500 internal error"))
