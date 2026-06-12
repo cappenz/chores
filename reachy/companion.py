@@ -43,6 +43,9 @@ class ReachyCompanion(Protocol):
     async def close(self) -> None:
         ...
 
+    def diagnostics(self) -> dict:
+        ...
+
 
 @dataclass(frozen=True)
 class ReachyConfig:
@@ -83,6 +86,9 @@ class NoOpReachyCompanion:
 
     async def close(self) -> None:
         pass
+
+    def diagnostics(self) -> dict:
+        return {"state": "disabled", "reason": self.reason}
 
 
 class SdkReachyCompanion:
@@ -193,6 +199,13 @@ class SdkReachyCompanion:
             return_exceptions=True,
         )
         await asyncio.to_thread(self._close_mini)
+
+    def diagnostics(self) -> dict:
+        try:
+            status = self._mini.client.get_status(wait=False)
+            return _daemon_status_to_dict(status)
+        except Exception as error:
+            return {"state": "error", "error": str(error)}
 
     def _start_face_tracking(self) -> None:
         if (
@@ -508,6 +521,46 @@ class RetryingReachyCompanion:
         if now - self._last_log_time >= LOG_THROTTLE_SECONDS:
             print(f"[reachy] {message}", flush=True)
             self._last_log_time = now
+
+    def diagnostics(self) -> dict:
+        retrying = (
+            self._retry_task is not None
+            and not self._retry_task.done()
+        ) or (self._companion is None and not self._closed and self._config.enabled)
+        result = {
+            "desired_awake": self._desired_awake,
+            "desired_speaking": self._desired_speaking,
+            "connected": self._companion is not None,
+            "connected_once": self._connected_once,
+            "retrying": retrying,
+        }
+        if self._companion is not None:
+            result["sdk"] = self._companion.diagnostics()
+        return result
+
+
+def _daemon_status_to_dict(status) -> dict:
+    backend = status.backend_status
+    state = status.state
+    result = {
+        "daemon_state": state.value if hasattr(state, "value") else str(state),
+        "daemon_version": status.version,
+        "hardware_id": status.hardware_id,
+        "daemon_error": status.error,
+    }
+    if backend is None:
+        return result
+
+    mode = getattr(backend, "motor_control_mode", None)
+    stats = getattr(backend, "control_loop_stats", None)
+    result.update({
+        "backend_ready": getattr(backend, "ready", None),
+        "backend_error": getattr(backend, "error", None),
+        "motor_mode": mode.value if hasattr(mode, "value") else str(mode) if mode is not None else None,
+        "last_alive": getattr(backend, "last_alive", None),
+        "control_loop": str(stats) if stats else None,
+    })
+    return result
 
 
 def _create_sdk_companion(

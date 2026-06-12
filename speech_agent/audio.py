@@ -63,6 +63,36 @@ def print_audio_devices() -> None:
         pya.terminate()
 
 
+def get_audio_device_diagnostics() -> dict:
+    pyaudio = _pyaudio()
+    pya = pyaudio.PyAudio()
+    result: dict = {"input": {}, "output": {}}
+    try:
+        try:
+            mic = _input_device_info(pya, None)
+            result["input"] = {
+                "name": mic["name"],
+                "index": mic["index"],
+                "channels": int(mic.get("maxInputChannels", 0)),
+                "sample_rate": mic.get("defaultSampleRate"),
+            }
+        except OSError as error:
+            result["input"] = {"error": str(error)}
+        try:
+            spk = _output_device_info(pya, None)
+            result["output"] = {
+                "name": spk["name"],
+                "index": spk["index"],
+                "channels": int(spk.get("maxOutputChannels", 0)),
+                "sample_rate": spk.get("defaultSampleRate"),
+            }
+        except OSError as error:
+            result["output"] = {"error": str(error)}
+    finally:
+        pya.terminate()
+    return result
+
+
 def run_audio_selftest(config: AudioSelfTestConfig) -> AudioSelfTestResult:
     pyaudio = _pyaudio()
     total_frames = int(SEND_SAMPLE_RATE * config.seconds)

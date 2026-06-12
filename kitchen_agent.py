@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+import datetime
 import os
 import sys
+import time
 
 from chores import ChoreCommandResult, ChoresService
 from core.audio_announcements import generate_and_play_audio_async, generate_and_play_timer_audio_async
@@ -18,6 +20,9 @@ from kitchen_timer import (
 )
 from reachy import ReachyConfig, run_reachy_companion
 from speech_agent import AssistantEvent, SpeechAgentConfig, run_speech_agent
+from speech_agent.audio import get_audio_device_diagnostics
+
+AUDIO_DIAGNOSTICS_CACHE_SECONDS = 10.0
 
 
 class AppChoresApi:
@@ -78,6 +83,8 @@ def main() -> None:
     bot: ChoresBot | None = None
     gemini_active = False
     screen = None
+    app_started_at = time.monotonic()
+    audio_diagnostics_cache = {"at": 0.0, "data": {"input": {}, "output": {}}}
 
     def on_face_sample_saved(image_path) -> None:
         if screen:
@@ -88,6 +95,34 @@ def main() -> None:
         face_sample_collector=FaceSampleCollector(),
         on_face_sample_saved=on_face_sample_saved,
     )
+
+    def build_diagnostics() -> dict:
+        now = time.monotonic()
+        if now - audio_diagnostics_cache["at"] > AUDIO_DIAGNOSTICS_CACHE_SECONDS:
+            audio_diagnostics_cache["at"] = now
+            audio_diagnostics_cache["data"] = get_audio_device_diagnostics()
+
+        timer_status = _screen_status_from_timer(kitchen_timer.get_status())
+        return {
+            "app": {
+                "pid": os.getpid(),
+                "uptime_seconds": round(now - app_started_at, 1),
+                "now": datetime.datetime.now().isoformat(timespec="seconds"),
+            },
+            "ui": {
+                "audio_enabled": chores.get_audio_enabled(),
+                "speech_active": gemini_active,
+                "status_title": timer_status.title if timer_status else "none",
+                "status_value": timer_status.value if timer_status else "none",
+            },
+            "reachy": reachy.diagnostics(),
+            "audio": audio_diagnostics_cache["data"],
+            "env": {
+                "REACHY_ENABLED": os.getenv("REACHY_ENABLED", "unknown"),
+                "REACHY_DAEMON_MODE": os.getenv("REACHY_DAEMON_MODE", "unknown"),
+                "REACHY_RECONNECT_ON_FAILURE": os.getenv("REACHY_RECONNECT_ON_FAILURE", "unknown"),
+            },
+        }
 
     async def after_result(result: ChoreCommandResult) -> None:
         refresh_screen_without_pump()
@@ -102,12 +137,14 @@ def main() -> None:
 
     def refresh_screen() -> None:
         if screen:
+            screen.set_diagnostics(build_diagnostics())
             screen.refresh(chores.get_status())
             screen.set_status(_screen_status_from_timer(kitchen_timer.get_status()))
             screen.pump()
 
     def refresh_screen_without_pump() -> None:
         if screen:
+            screen.set_diagnostics(build_diagnostics())
             screen.refresh(chores.get_status())
             screen.set_status(_screen_status_from_timer(kitchen_timer.get_status()))
 
@@ -188,6 +225,8 @@ def main() -> None:
     except (ValueError, IndexError):
         print("Invalid WINDOWMODE format. Expected format: '1280 x 800'")
         sys.exit(1)
+
+    screen.set_diagnostics(build_diagnostics())
 
     bot = ChoresBot(
         chores,
