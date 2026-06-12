@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import time
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -13,57 +14,107 @@ from reachy.companion import (
     _daemon_status_to_dict,
 )
 from speech_agent.audio import get_audio_device_diagnostics
+from speech_agent.live import get_live_model_diagnostics
 
 
 def test_format_diagnostics_lines_includes_sections_and_labels():
     diagnostics = {
-        "app": {"pid": 123, "uptime_seconds": 45.2, "now": "2026-06-12T11:08:00"},
+        "app": {"uptime_seconds": 45.2},
         "ui": {
             "audio_enabled": True,
             "speech_active": False,
             "status_title": "Timer",
             "status_value": "03:12",
         },
+        "models": {
+            "active": None,
+            "primary": "gemini-3.1-flash-live-preview",
+            "fallback": "gemini-2.5-flash-native-audio-preview-12-2025",
+            "announcement_tts": "eleven_multilingual_v2",
+        },
         "reachy": {
             "connected": True,
+            "desired_awake": True,
+            "retrying": False,
             "sdk": {
                 "daemon_state": "running",
                 "daemon_version": "1.7.3",
-                "hardware_id": "abc123",
                 "backend_ready": True,
-                "backend_error": None,
-                "motor_mode": "enabled",
-                "last_alive": 1710000000.0,
-                "control_loop": "{'nb_error': 0}",
+                "last_alive": time.time() - 1.2,
             },
         },
         "audio": {
             "input": {"name": "Mic", "index": 1, "channels": 1, "sample_rate": 16000.0},
             "output": {"name": "Speakers", "index": 3, "channels": 2, "sample_rate": 48000.0},
         },
-        "env": {"REACHY_ENABLED": "true"},
     }
 
-    text = "\n".join(format_diagnostics_lines(diagnostics))
+    text = "\n".join(format_diagnostics_lines(diagnostics, face_sample_count=2))
 
-    assert "Reachy" in text
-    assert "Reachy State: connected" in text
-    assert "Daemon State: running" in text
-    assert "Audio In: Mic (index 1, 1ch, 16000.0 Hz)" in text
-    assert "Audio Out: Speakers (index 3, 2ch, 48000.0 Hz)" in text
+    assert "Reachy State: connected | daemon running v1.7.3 | awake=yes | retrying=no" in text
+    assert "Actuation: ready=yes, last_alive=" in text
+    assert "PyAudio default in: Mic (index 1, 1ch, 16000.0 Hz)" in text
+    assert "PyAudio default out: Speakers (index 3, 2ch, 48000.0 Hz)" in text
+    assert "Live model: idle" in text
+    assert "Announcement TTS: eleven_multilingual_v2" in text
     assert "Speech Active: no" in text
     assert "Status: Timer / 03:12" in text
-    assert "PID: 123" in text
-    assert "REACHY_ENABLED: true" in text
+    assert "Uptime: 45.2s" in text
+    assert "Face samples: 2" in text
+    assert "Daemon State" not in text
+    assert "PID:" not in text
+
+
+def test_format_diagnostics_lines_omits_status_when_idle():
+    text = "\n".join(format_diagnostics_lines({
+        "ui": {"status_title": "none", "status_value": "none"},
+    }))
+
+    assert "Status:" not in text
+
+
+def test_format_diagnostics_lines_shows_active_live_model():
+    text = "\n".join(format_diagnostics_lines({
+        "models": {"active": "gemini-3.1-flash-live-preview"},
+    }))
+
+    assert "Live model: gemini-3.1-flash-live-preview" in text
+
+
+def test_format_diagnostics_lines_clips_long_values():
+    long_name = "X" * 100
+    text = "\n".join(format_diagnostics_lines({
+        "audio": {"input": {"name": long_name, "index": 1, "channels": 1, "sample_rate": 16000.0}},
+    }))
+
+    line = next(line for line in text.splitlines() if line.startswith("  PyAudio default in:"))
+    assert line.endswith("…")
+    assert len(line.split(": ", 1)[1]) == 80
 
 
 def test_format_diagnostics_lines_uses_unknown_for_missing_values():
     text = "\n".join(format_diagnostics_lines({}))
 
     assert "Reachy State: unknown" in text
-    assert "Audio In: unknown" in text
-    assert "Audio Out: unknown" in text
-    assert "PID: unknown" in text
+    assert "PyAudio default in: unknown" in text
+    assert "PyAudio default out: unknown" in text
+    assert "Face samples: 0" in text
+
+
+def test_format_diagnostics_lines_marks_stale_last_alive():
+    text = "\n".join(format_diagnostics_lines({
+        "reachy": {"sdk": {"backend_ready": False, "last_alive": time.time() - 12.0}},
+    }))
+
+    assert "last_alive=stale (12s ago)" in text
+
+
+def test_get_live_model_diagnostics_includes_primary_and_fallback():
+    result = get_live_model_diagnostics()
+
+    assert result["active"] is None
+    assert result["primary"] == "gemini-3.1-flash-live-preview"
+    assert result["fallback"] == "gemini-2.5-flash-native-audio-preview-12-2025"
 
 
 def test_load_face_sample_metadata_reads_adjacent_json(tmp_path: Path):

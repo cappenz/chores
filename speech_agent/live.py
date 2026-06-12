@@ -17,10 +17,20 @@ from speech_agent.events import AssistantEvent
 from speech_agent.tools import SpeechChoresApi, build_tools, handle_tool_call
 
 MIC_MIME = "audio/pcm;rate=16000"
-MODELS = (
+LIVE_MODELS = (
     "gemini-3.1-flash-live-preview",
     "gemini-2.5-flash-native-audio-preview-12-2025",
 )
+_active_live_model: str | None = None
+
+
+def get_live_model_diagnostics() -> dict:
+    fallback = LIVE_MODELS[1] if len(LIVE_MODELS) > 1 else None
+    return {
+        "active": _active_live_model,
+        "primary": LIVE_MODELS[0] if LIVE_MODELS else None,
+        "fallback": fallback,
+    }
 STOP_LISTENING_PHRASES = ("goodbye", "stop listening")
 VOICE_NAME = "Schedar"
 GEMINI_SESSION_CLOSE_TIMEOUT_SECONDS = 2.0
@@ -346,18 +356,21 @@ async def run_live(
     session_context = None
     connection_marked_active = False
     exit_error: BaseException | None = None
-    for model in MODELS:
+    global _active_live_model
+    _active_live_model = None
+    for model in LIVE_MODELS:
         try:
             print(f"Connecting with model: {model}", flush=True)
             session_context = client.aio.live.connect(model=model, config=_build_config(model))
             session = await session_context.__aenter__()
+            _active_live_model = model
             break
         except BaseException as error:
             last_error = error
             if session_context is not None:
                 await session_context.__aexit__(type(error), error, error.__traceback__)
                 session_context = None
-            if model == MODELS[-1]:
+            if model == LIVE_MODELS[-1]:
                 raise
             print(f"Model {model!r} failed ({error!r}); trying fallback.", flush=True)
     if session is None:
@@ -387,6 +400,7 @@ async def run_live(
             if connection_marked_active:
                 await _notify_connection(on_connection_active, False)
     finally:
+        _active_live_model = None
         if session_context is not None:
             try:
                 await asyncio.wait_for(

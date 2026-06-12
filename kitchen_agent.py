@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 import asyncio
-import datetime
 import os
 import sys
 import time
 
 from chores import ChoreCommandResult, ChoresService
-from core.audio_announcements import generate_and_play_audio_async, generate_and_play_timer_audio_async
+from core.audio_announcements import (
+    ANNOUNCEMENT_TTS_MODEL,
+    generate_and_play_audio_async,
+    generate_and_play_timer_audio_async,
+)
 from core.people import load_people
 from discord_bot import ChoresBot, format_result_for_discord
 from display import ScreenStatus, create_screen
@@ -21,6 +24,7 @@ from kitchen_timer import (
 from reachy import ReachyConfig, run_reachy_companion
 from speech_agent import AssistantEvent, SpeechAgentConfig, run_speech_agent
 from speech_agent.audio import get_audio_device_diagnostics
+from speech_agent.live import get_live_model_diagnostics
 
 AUDIO_DIAGNOSTICS_CACHE_SECONDS = 10.0
 
@@ -103,11 +107,10 @@ def main() -> None:
             audio_diagnostics_cache["data"] = get_audio_device_diagnostics()
 
         timer_status = _screen_status_from_timer(kitchen_timer.get_status())
+        live_models = get_live_model_diagnostics()
         return {
             "app": {
-                "pid": os.getpid(),
                 "uptime_seconds": round(now - app_started_at, 1),
-                "now": datetime.datetime.now().isoformat(timespec="seconds"),
             },
             "ui": {
                 "audio_enabled": chores.get_audio_enabled(),
@@ -115,13 +118,12 @@ def main() -> None:
                 "status_title": timer_status.title if timer_status else "none",
                 "status_value": timer_status.value if timer_status else "none",
             },
+            "models": {
+                **live_models,
+                "announcement_tts": ANNOUNCEMENT_TTS_MODEL,
+            },
             "reachy": reachy.diagnostics(),
             "audio": audio_diagnostics_cache["data"],
-            "env": {
-                "REACHY_ENABLED": os.getenv("REACHY_ENABLED", "unknown"),
-                "REACHY_DAEMON_MODE": os.getenv("REACHY_DAEMON_MODE", "unknown"),
-                "REACHY_RECONNECT_ON_FAILURE": os.getenv("REACHY_RECONNECT_ON_FAILURE", "unknown"),
-            },
         }
 
     async def after_result(result: ChoreCommandResult) -> None:

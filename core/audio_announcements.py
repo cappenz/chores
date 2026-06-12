@@ -8,6 +8,7 @@ from elevenlabs.play import play
 from openai import OpenAI
 
 ANNOUNCEMENT_VOICE_ID = "QvlD90AkjGTCqc9685Rq"
+ANNOUNCEMENT_TTS_MODEL = "eleven_multilingual_v2"
 
 
 def generate_speech(chore_name: str, chore_person: str) -> str:
@@ -33,7 +34,7 @@ def generate_audio(text: str) -> None:
     audio = client.text_to_speech.convert(
         voice_id=ANNOUNCEMENT_VOICE_ID,
         text=text,
-        model_id="eleven_multilingual_v2",
+        model_id=ANNOUNCEMENT_TTS_MODEL,
     )
     play(audio)
 
