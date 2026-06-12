@@ -9,6 +9,7 @@ from core.audio_announcements import generate_and_play_audio_async, generate_and
 from core.people import load_people
 from discord_bot import ChoresBot, format_result_for_discord
 from display import ScreenStatus, create_screen
+from face_samples import FaceSampleCollector
 from kitchen_timer import (
     KitchenTimerEvent,
     KitchenTimerService,
@@ -76,7 +77,17 @@ def main() -> None:
     assistant_events: asyncio.Queue[AssistantEvent] = asyncio.Queue()
     bot: ChoresBot | None = None
     gemini_active = False
-    reachy = run_reachy_companion(_reachy_config_from_env())
+    screen = None
+
+    def on_face_sample_saved(image_path) -> None:
+        if screen:
+            screen.add_face_sample(image_path)
+
+    reachy = run_reachy_companion(
+        _reachy_config_from_env(),
+        face_sample_collector=FaceSampleCollector(),
+        on_face_sample_saved=on_face_sample_saved,
+    )
 
     async def after_result(result: ChoreCommandResult) -> None:
         refresh_screen_without_pump()

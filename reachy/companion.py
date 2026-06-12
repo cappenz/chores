@@ -6,7 +6,10 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from enum import StrEnum
+from pathlib import Path
 from typing import Any, Protocol
+
+from face_samples import FaceSampleCollector
 
 DEFAULT_TRACKING_HZ = 8.0
 DEFAULT_MEDIA_BACKEND = "default"
@@ -55,6 +58,13 @@ class ReachyConfig:
     reconnect_on_command_failure: bool = True
 
 
+@dataclass(frozen=True)
+class FaceDetection:
+    target: tuple[float, float]
+    box: tuple[int, int, int, int]
+    sample_path: Path | None = None
+
+
 class NoOpReachyCompanion:
     def __init__(self, reason: str = "disabled") -> None:
         self.reason = reason
@@ -83,13 +93,18 @@ class SdkReachyCompanion:
         create_head_pose: Callable[..., Any],
         config: ReachyConfig,
         face_detector: "FaceDetector | None" = None,
+        face_sample_collector: FaceSampleCollector | None = None,
+        on_face_sample_saved: Callable[[Path], None] | None = None,
     ) -> None:
         self._mini = mini
         self._create_head_pose = create_head_pose
         self._config = config
         self._face_detector = face_detector
+        self._face_sample_collector = face_sample_collector
+        self._on_face_sample_saved = on_face_sample_saved
         self._motion_lock = asyncio.Lock()
         self._face_task: asyncio.Task | None = None
+        self._face_sample_task: asyncio.Task | None = None
         self._speaking_task: asyncio.Task | None = None
         self._emotion_task: asyncio.Task | None = None
         self._closed = False
@@ -99,6 +114,7 @@ class SdkReachyCompanion:
         if self._closed:
             return
         self._awake = True
+        self._stop_face_sample_collection()
         async with self._motion_lock:
             await asyncio.to_thread(self._call_if_present, "enable_motors")
             await asyncio.to_thread(
@@ -129,6 +145,7 @@ class SdkReachyCompanion:
                     duration=1.0,
                     method="minjerk",
                 )
+        self._start_face_sample_collection()
 
     async def set_speaking(self, active: bool) -> None:
         if not self._config.speaking_motion_enabled or self._closed:
@@ -155,12 +172,24 @@ class SdkReachyCompanion:
         self._closed = True
         self._awake = False
         face_task = self._face_task
+        face_sample_task = self._face_sample_task
         self._cancel_task(face_task)
         self._face_task = None
+        self._cancel_task(face_sample_task)
+        self._face_sample_task = None
         self._cancel_task(self._speaking_task)
         self._cancel_task(self._emotion_task)
         await asyncio.gather(
-            *(task for task in (self._speaking_task, self._emotion_task, face_task) if task),
+            *(
+                task
+                for task in (
+                    self._speaking_task,
+                    self._emotion_task,
+                    face_task,
+                    face_sample_task,
+                )
+                if task
+            ),
             return_exceptions=True,
         )
         await asyncio.to_thread(self._close_mini)
@@ -179,6 +208,21 @@ class SdkReachyCompanion:
     def _stop_face_tracking(self) -> None:
         self._cancel_task(self._face_task)
         self._face_task = None
+
+    def _start_face_sample_collection(self) -> None:
+        if (
+            self._closed
+            or self._awake
+            or self._face_detector is None
+            or self._face_sample_collector is None
+        ):
+            return
+        if self._face_sample_task is None or self._face_sample_task.done():
+            self._face_sample_task = asyncio.create_task(self._face_sample_loop())
+
+    def _stop_face_sample_collection(self) -> None:
+        self._cancel_task(self._face_sample_task)
+        self._face_sample_task = None
 
     async def _speaking_loop(self) -> None:
         phase = 0
@@ -217,19 +261,42 @@ class SdkReachyCompanion:
         try:
             while True:
                 started = time.monotonic()
-                target = await asyncio.to_thread(self._detect_face_target)
-                if target is not None:
-                    smoothed = _smooth_target(smoothed, target)
+                detection = await asyncio.to_thread(self._detect_face)
+                if detection is not None:
+                    self._notify_face_sample_saved(detection)
+                    smoothed = _smooth_target(smoothed, detection.target)
                     await self._look_at_normalized_target(smoothed)
                 elapsed = time.monotonic() - started
                 await asyncio.sleep(max(0.0, interval - elapsed))
         except asyncio.CancelledError:
             pass
 
-    def _detect_face_target(self) -> tuple[float, float] | None:
+    async def _face_sample_loop(self) -> None:
+        assert self._face_sample_collector is not None
+        interval = self._face_sample_collector.min_interval_seconds
+        try:
+            while True:
+                detection = await asyncio.to_thread(self._detect_face)
+                if detection is not None:
+                    self._notify_face_sample_saved(detection)
+                await asyncio.sleep(interval)
+        except asyncio.CancelledError:
+            pass
+
+    def _detect_face(self) -> FaceDetection | None:
         frame = self._mini.media.get_frame()
         assert self._face_detector is not None
-        return self._face_detector.detect(frame)
+        detection = self._face_detector.detect(frame)
+        if detection is None or self._face_sample_collector is None:
+            return detection
+        sample = self._face_sample_collector.maybe_save(frame, detection.box)
+        if sample is None:
+            return detection
+        return FaceDetection(detection.target, detection.box, sample.image_path)
+
+    def _notify_face_sample_saved(self, detection: FaceDetection) -> None:
+        if detection.sample_path is not None and self._on_face_sample_saved is not None:
+            self._on_face_sample_saved(detection.sample_path)
 
     async def _look_at_normalized_target(self, target: tuple[float, float]) -> None:
         x, y = target
@@ -269,7 +336,7 @@ class FaceDetector:
             cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
         )
 
-    def detect(self, frame) -> tuple[float, float] | None:
+    def detect(self, frame) -> FaceDetection | None:
         cv2 = self._cv2
         gray = cv2.cvtColor(frame, cv2.COLOR_RGB2GRAY)
         faces = self._cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5)
@@ -279,7 +346,10 @@ class FaceDetector:
         x, y, w, h = max(faces, key=lambda face: face[2] * face[3])
         center_x = (x + w / 2) / width
         center_y = (y + h / 2) / height
-        return (center_x - 0.5) * 2.0, (center_y - 0.5) * 2.0
+        return FaceDetection(
+            target=((center_x - 0.5) * 2.0, (center_y - 0.5) * 2.0),
+            box=(int(x), int(y), int(w), int(h)),
+        )
 
 
 @dataclass(frozen=True)
@@ -291,8 +361,16 @@ class EmotionMove:
 
 
 class RetryingReachyCompanion:
-    def __init__(self, config: ReachyConfig) -> None:
+    def __init__(
+        self,
+        config: ReachyConfig,
+        *,
+        face_sample_collector: FaceSampleCollector | None = None,
+        on_face_sample_saved: Callable[[Path], None] | None = None,
+    ) -> None:
         self._config = config
+        self._face_sample_collector = face_sample_collector
+        self._on_face_sample_saved = on_face_sample_saved
         self._companion: SdkReachyCompanion | None = None
         self._desired_awake = False
         self._desired_speaking = False
@@ -352,7 +430,11 @@ class RetryingReachyCompanion:
             if self._retry_exhausted():
                 return None
             try:
-                self._companion = _create_sdk_companion(self._config)
+                self._companion = _create_sdk_companion(
+                    self._config,
+                    face_sample_collector=self._face_sample_collector,
+                    on_face_sample_saved=self._on_face_sample_saved,
+                )
             except Exception as error:
                 self._log_throttled(f"Waiting for daemon: {error}")
                 return None
@@ -428,7 +510,12 @@ class RetryingReachyCompanion:
             self._last_log_time = now
 
 
-def _create_sdk_companion(config: ReachyConfig) -> SdkReachyCompanion:
+def _create_sdk_companion(
+    config: ReachyConfig,
+    *,
+    face_sample_collector: FaceSampleCollector | None = None,
+    on_face_sample_saved: Callable[[Path], None] | None = None,
+) -> SdkReachyCompanion:
     ReachyMini, create_head_pose = _reachy_imports()
     media_backend = config.media_backend
     if not config.face_tracking_enabled and media_backend == DEFAULT_MEDIA_BACKEND:
@@ -440,13 +527,24 @@ def _create_sdk_companion(config: ReachyConfig) -> SdkReachyCompanion:
         create_head_pose=create_head_pose,
         config=config,
         face_detector=face_detector,
+        face_sample_collector=face_sample_collector,
+        on_face_sample_saved=on_face_sample_saved,
     )
 
 
-def run_reachy_companion(config: ReachyConfig) -> ReachyCompanion:
+def run_reachy_companion(
+    config: ReachyConfig,
+    *,
+    face_sample_collector: FaceSampleCollector | None = None,
+    on_face_sample_saved: Callable[[Path], None] | None = None,
+) -> ReachyCompanion:
     if not config.enabled:
         return NoOpReachyCompanion()
-    return RetryingReachyCompanion(config)
+    return RetryingReachyCompanion(
+        config,
+        face_sample_collector=face_sample_collector,
+        on_face_sample_saved=on_face_sample_saved,
+    )
 
 
 def _parse_emotion(emotion: ReachyEmotion | str) -> ReachyEmotion | None:

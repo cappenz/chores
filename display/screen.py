@@ -4,6 +4,7 @@ import datetime
 import asyncio
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
+from datetime import timedelta
 from pathlib import Path
 from typing import Any
 
@@ -23,6 +24,9 @@ HEADER_REGION_HEIGHT = 220
 CHORES_REGION_HEIGHT = 430
 CONTROLS_REGION_HEIGHT = 150
 HORIZONTAL_PADDING = 40
+FACE_SAMPLE_PREVIEW_SECONDS = 60
+FACE_SAMPLE_PREVIEW_SIZE = 92
+MAX_FACE_SAMPLE_PREVIEWS = 3
 
 
 @dataclass(frozen=True)
@@ -48,6 +52,10 @@ class Screen:
         self.on_audio_toggle = on_audio_toggle
         self.audio_enabled = status.audio_enabled
         self.speech_active = False
+        self.current_status: ScreenStatus | None = None
+        self.face_sample_paths: list[Path] = []
+        self.face_sample_photos: list[ImageTk.PhotoImage] = []
+        self.face_sample_expires_at: datetime.datetime | None = None
         window.configure(bg="#f5f5f5")
 
         header_region = tk.Frame(window, bg="#f5f5f5", padx=HORIZONTAL_PADDING, pady=40)
@@ -122,6 +130,24 @@ class Screen:
             anchor="w",
         )
         self.status_value_label.pack(anchor="w")
+
+        self.face_sample_frame = tk.Frame(self.right_header, bg="#f5f5f5")
+        self.face_sample_title = tk.Label(
+            self.face_sample_frame,
+            text="Face samples",
+            font=("Helvetica", 20, "bold"),
+            bg="#f5f5f5",
+            fg="#333333",
+            anchor="e",
+        )
+        self.face_sample_title.pack(anchor="e")
+        self.face_sample_row = tk.Frame(self.face_sample_frame, bg="#f5f5f5")
+        self.face_sample_row.pack(anchor="e")
+        self.face_sample_labels = [
+            tk.Label(self.face_sample_row, bg="#f5f5f5") for _ in range(MAX_FACE_SAMPLE_PREVIEWS)
+        ]
+        for label in self.face_sample_labels:
+            label.pack(side=tk.LEFT, padx=(8, 0))
 
         top_frame.bind("<Configure>", self._on_top_frame_configure)
 
@@ -220,13 +246,30 @@ class Screen:
         for index, assignment in enumerate(status.assignments):
             self.chore_names[index].config(text=assignment.person_display_name)
             self.chore_images[index].config(image=self.chore_photos[assignment.person_id])
+        self._clear_expired_face_samples()
 
     async def play_audio(self, audio: Any) -> None:
         del audio
 
     def set_status(self, status: ScreenStatus | None) -> None:
+        self.current_status = status
+        self._render_top_right()
+
+    def add_face_sample(self, image_path: Path) -> None:
+        self.face_sample_paths.insert(0, image_path)
+        self.face_sample_paths = self.face_sample_paths[:MAX_FACE_SAMPLE_PREVIEWS]
+        self.face_sample_expires_at = datetime.datetime.now() + timedelta(
+            seconds=FACE_SAMPLE_PREVIEW_SECONDS
+        )
+        self._render_top_right()
+        self.window.after(FACE_SAMPLE_PREVIEW_SECONDS * 1000, self._clear_expired_face_samples)
+
+    def _render_top_right(self) -> None:
+        self.status_frame.pack_forget()
+        self.face_sample_frame.pack_forget()
+        status = self.current_status
         if status is None:
-            self.status_frame.pack_forget()
+            self._render_face_samples()
             return
 
         border_color = "#333333" if status.highlighted else "#f5f5f5"
@@ -234,6 +277,36 @@ class Screen:
         self.status_title_label.config(text=status.title)
         self.status_value_label.config(text=status.value)
         self.status_frame.pack(anchor="ne", padx=(0, 40))
+
+    def _render_face_samples(self) -> None:
+        self._clear_expired_face_samples()
+        self.face_sample_photos = []
+        for label in self.face_sample_labels:
+            label.config(image="")
+            label.pack_forget()
+        if not self.face_sample_paths:
+            return
+        for label, path in zip(self.face_sample_labels, self.face_sample_paths, strict=False):
+            try:
+                with Image.open(path) as image:
+                    image = image.copy()
+                image.thumbnail((FACE_SAMPLE_PREVIEW_SIZE, FACE_SAMPLE_PREVIEW_SIZE), Image.LANCZOS)
+                photo = ImageTk.PhotoImage(image)
+            except Exception:
+                continue
+            self.face_sample_photos.append(photo)
+            label.config(image=photo)
+            label.pack(side=tk.LEFT, padx=(8, 0))
+        if self.face_sample_photos:
+            self.face_sample_frame.pack(anchor="ne", padx=(0, 40))
+
+    def _clear_expired_face_samples(self) -> None:
+        if self.face_sample_expires_at is None or datetime.datetime.now() < self.face_sample_expires_at:
+            return
+        self.face_sample_paths = []
+        self.face_sample_photos = []
+        self.face_sample_expires_at = None
+        self.face_sample_frame.pack_forget()
 
     def set_speech_active(self, active: bool) -> None:
         if self.speech_active == active:

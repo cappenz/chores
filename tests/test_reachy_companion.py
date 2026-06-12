@@ -60,7 +60,8 @@ def test_retrying_companion_reconnects_after_initial_failure():
     )
     attempts = {"count": 0}
 
-    def fake_create(_config: ReachyConfig) -> SdkReachyCompanion:
+    def fake_create(_config: ReachyConfig, **kwargs) -> SdkReachyCompanion:
+        del kwargs
         attempts["count"] += 1
         if attempts["count"] == 1:
             raise ConnectionError("daemon unavailable")
