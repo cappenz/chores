@@ -7,7 +7,7 @@ from elevenlabs.client import ElevenLabs
 from elevenlabs.play import play
 from openai import OpenAI
 
-ANNOUNCEMENT_VOICE_ID = "QvlD90AkjGTCqc9685Rq"
+ANNOUNCEMENT_VOICE_ID = "inGcvmoPgbvKUk9uCvHu"
 ANNOUNCEMENT_TTS_MODEL = "eleven_multilingual_v2"
 
 
@@ -16,7 +16,7 @@ def generate_speech(chore_name: str, chore_person: str) -> str:
     intro_prompt = f"""
     Write a super short speech (two sentences max) to announce the fact that {chore_person} has to do the {chore_name} chore today.
     Start it by announcing that you are back!
-    The speech should contain a joke about the person.
+    The speech should contain a pick up line (the cheesier the better).
     """
 
     completion = client.chat.completions.create(
