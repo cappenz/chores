@@ -62,7 +62,7 @@ Default tuning should prefer reliable positives:
 - reject implausible aspect ratios or boxes clipped too tightly to frame edges
 - choose the best target by confidence and size, with bias toward the current
   tracked face to avoid unnecessary jumps
-- run at a bounded cadence, initially around 8 detections per second
+- run at a bounded cadence, initially around 2 detections per second
 - drop stale frames instead of building a backlog
 
 The exact thresholds are configuration values owned by `reachy/`, not Gemini
@@ -78,8 +78,9 @@ maintain a short-lived track state:
 - keep an active target through brief misses for a small grace window
 - smooth target coordinates before converting them to head motion
 - reject sudden large jumps unless the previous target has been lost
-- stop commanding face tracking while Reachy is sleeping, playing an emotion, or
-  otherwise under another motion mode
+- stop face detection and face tracking while Reachy is sleeping
+- stop commanding face tracking while Reachy is playing an emotion or otherwise
+  under another motion mode
 
 Motion conversion remains conservative:
 

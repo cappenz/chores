@@ -5,6 +5,8 @@ from unittest.mock import patch
 
 from kitchen_agent import prepare_reachy_for_startup
 from reachy.companion import (
+    DEFAULT_TRACKING_HZ,
+    FaceDetection,
     NoOpReachyCompanion,
     ReachyConfig,
     ReachyEmotion,
@@ -35,6 +37,15 @@ class FakeMini:
         self.calls.append(("close",))
 
 
+class FakeFaceDetector:
+    def __init__(self) -> None:
+        self.frames = []
+
+    def detect(self, frame) -> FaceDetection | None:
+        self.frames.append(frame)
+        return None
+
+
 def fake_head_pose(**kwargs):
     return {"head_pose": kwargs}
 
@@ -49,6 +60,11 @@ def test_enabled_reachy_uses_retrying_companion():
     companion = run_reachy_companion(ReachyConfig(enabled=True))
 
     assert isinstance(companion, RetryingReachyCompanion)
+
+
+def test_default_face_tracking_rate_is_two_hz():
+    assert DEFAULT_TRACKING_HZ == 2.0
+    assert ReachyConfig().tracking_hz == 2.0
 
 
 def test_retrying_companion_reconnects_after_initial_failure():
@@ -176,6 +192,26 @@ def test_wake_and_sleep_use_reachy_motion_api():
     assert mini.calls[1][0] == "goto_target"
     assert ("goto_sleep",) in mini.calls
     assert ("close",) in mini.calls
+
+
+def test_sleep_does_not_start_face_detection():
+    mini = FakeMini()
+    detector = FakeFaceDetector()
+    companion = SdkReachyCompanion(
+        mini,
+        create_head_pose=fake_head_pose,
+        config=ReachyConfig(enabled=True, face_tracking_enabled=True),
+        face_detector=detector,
+    )
+
+    async def run() -> None:
+        await companion.sleep()
+        await asyncio.sleep(0)
+        await companion.close()
+
+    asyncio.run(run())
+
+    assert detector.frames == []
 
 
 def test_show_emotion_queues_curated_motion():

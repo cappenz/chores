@@ -58,7 +58,7 @@ All motor commands pass through one motion owner inside `reachy/`. Sleep/wake tr
 
 ## Face Tracking
 
-Face tracking is a rate-limited background vision loop active in the `awake` state. The loop reads frames from the Reachy camera, detects nearby faces, chooses a target face, smooths the target over time, and sends a look target to the motion owner. It runs at a bounded cadence, initially around 8 detections per second, and drops stale frames rather than trying to process every camera frame.
+Face tracking is a rate-limited background vision loop active in the `awake` state. The loop reads frames from the Reachy camera, detects nearby faces, chooses a target face, smooths the target over time, and sends a look target to the motion owner. It runs at a bounded cadence, initially around 2 detections per second, and drops stale frames rather than trying to process every camera frame. Face detection must not run while Reachy is sleeping.
 
 The normal frame source is `mini.media.get_frame()` without Reachy audio. Direct OpenCV camera capture is the fallback when SDK media conflicts with host audio.
 
