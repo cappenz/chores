@@ -1,4 +1,4 @@
-.PHONY: run test test-audio reachy-sim reachy-sim-setup push-cappenz \
+.PHONY: run test test-model test-audio reachy-sim reachy-sim-setup push-cappenz \
 	reachy-daemon-install reachy-daemon-uninstall reachy-daemon-start \
 	reachy-daemon-stop reachy-daemon-status reachy-daemon-logs reachy-daemon-print
 
@@ -8,7 +8,10 @@ run:
 	uv run --env-file .env python3 kitchen_agent.py
 
 test:
-	uv run pytest -m "not manual" tests
+	uv run pytest -m "not manual and not model" tests
+
+test-model:
+	uv run pytest -m model tests -s
 
 test-audio:
 	CHORES_TEST_AUDIO=1 uv run --env-file .env pytest -m manual tests/manual/test_audio.py -s

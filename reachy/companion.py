@@ -11,7 +11,7 @@ from typing import Any, Protocol
 
 from face_samples import FaceSampleCollector
 
-DEFAULT_TRACKING_HZ = 8.0
+DEFAULT_TRACKING_HZ = 2.0
 DEFAULT_MEDIA_BACKEND = "default"
 NO_MEDIA_BACKEND = "no_media"
 DEFAULT_CONNECT_RETRY_SECONDS = 3.0
@@ -110,7 +110,6 @@ class SdkReachyCompanion:
         self._on_face_sample_saved = on_face_sample_saved
         self._motion_lock = asyncio.Lock()
         self._face_task: asyncio.Task | None = None
-        self._face_sample_task: asyncio.Task | None = None
         self._speaking_task: asyncio.Task | None = None
         self._emotion_task: asyncio.Task | None = None
         self._closed = False
@@ -120,7 +119,6 @@ class SdkReachyCompanion:
         if self._closed:
             return
         self._awake = True
-        self._stop_face_sample_collection()
         async with self._motion_lock:
             await asyncio.to_thread(self._call_if_present, "enable_motors")
             await asyncio.to_thread(
@@ -151,7 +149,6 @@ class SdkReachyCompanion:
                     duration=1.0,
                     method="minjerk",
                 )
-        self._start_face_sample_collection()
 
     async def set_speaking(self, active: bool) -> None:
         if not self._config.speaking_motion_enabled or self._closed:
@@ -178,11 +175,8 @@ class SdkReachyCompanion:
         self._closed = True
         self._awake = False
         face_task = self._face_task
-        face_sample_task = self._face_sample_task
         self._cancel_task(face_task)
         self._face_task = None
-        self._cancel_task(face_sample_task)
-        self._face_sample_task = None
         self._cancel_task(self._speaking_task)
         self._cancel_task(self._emotion_task)
         await asyncio.gather(
@@ -192,7 +186,6 @@ class SdkReachyCompanion:
                     self._speaking_task,
                     self._emotion_task,
                     face_task,
-                    face_sample_task,
                 )
                 if task
             ),
@@ -221,21 +214,6 @@ class SdkReachyCompanion:
     def _stop_face_tracking(self) -> None:
         self._cancel_task(self._face_task)
         self._face_task = None
-
-    def _start_face_sample_collection(self) -> None:
-        if (
-            self._closed
-            or self._awake
-            or self._face_detector is None
-            or self._face_sample_collector is None
-        ):
-            return
-        if self._face_sample_task is None or self._face_sample_task.done():
-            self._face_sample_task = asyncio.create_task(self._face_sample_loop())
-
-    def _stop_face_sample_collection(self) -> None:
-        self._cancel_task(self._face_sample_task)
-        self._face_sample_task = None
 
     async def _speaking_loop(self) -> None:
         phase = 0
@@ -272,7 +250,7 @@ class SdkReachyCompanion:
         interval = 1.0 / max(self._config.tracking_hz, 1.0)
         smoothed: tuple[float, float] | None = None
         try:
-            while True:
+            while self._awake and not self._closed:
                 started = time.monotonic()
                 detection = await asyncio.to_thread(self._detect_face)
                 if detection is not None:
@@ -281,18 +259,6 @@ class SdkReachyCompanion:
                     await self._look_at_normalized_target(smoothed)
                 elapsed = time.monotonic() - started
                 await asyncio.sleep(max(0.0, interval - elapsed))
-        except asyncio.CancelledError:
-            pass
-
-    async def _face_sample_loop(self) -> None:
-        assert self._face_sample_collector is not None
-        interval = self._face_sample_collector.min_interval_seconds
-        try:
-            while True:
-                detection = await asyncio.to_thread(self._detect_face)
-                if detection is not None:
-                    self._notify_face_sample_saved(detection)
-                await asyncio.sleep(interval)
         except asyncio.CancelledError:
             pass
 
