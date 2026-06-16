@@ -131,8 +131,9 @@ on low-confidence matches.
 
 ## Testing
 
-Automated tests should not require the Reachy daemon, camera hardware, or model
-downloads. They should cover:
+Regular automated tests should not require the Reachy daemon, camera hardware,
+model downloads, model artifacts, or representative image datasets. They should
+cover pure logic:
 
 - parsing YuNet outputs into local detection objects
 - BGR/RGB conversion behavior for model input and saved crops
@@ -140,6 +141,13 @@ downloads. They should cover:
 - temporal promotion from candidate to active target
 - smoothing and jump rejection
 - sample metadata fields for boxes, landmarks, and aligned crops
+
+Model validation tests should be marked with the pytest `model` marker and run
+through `make test-model`, not through the regular `make test` suite. These tests
+may load local model artifacts and representative image fixtures to check
+detector quality, threshold behavior, landmark shape, and recognition embedding
+stability. They still should not require the Reachy daemon or live camera unless
+they are also marked as manual.
 
 Manual tests may use the real Reachy camera or simulator and should be explicit
 entry points outside `make test`.
