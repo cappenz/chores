@@ -62,6 +62,8 @@ Face tracking is a rate-limited background vision loop active in the `awake` sta
 
 The normal frame source is `mini.media.get_frame()` without Reachy audio. Direct OpenCV camera capture is the fallback when SDK media conflicts with host audio.
 
+Detailed detection, temporal tracking, face sample, and recognition-readiness requirements are in `specs/face_tracking.md`.
+
 ## Emotions
 
 The component exposes a curated local emotion enum:

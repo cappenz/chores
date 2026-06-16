@@ -58,6 +58,7 @@ These should run as asyncio tasks under one application supervisor where practic
 - `specs/speech_agent.md`: wake-word and Gemini Live component.
 - `specs/kitchen_timer.md`: kitchen timer state, commands, events, and display snapshots.
 - `specs/reachy.md`: Reachy Mini companion component.
+- `specs/face_tracking.md`: Reachy camera face detection, tracking, and recognition-ready outputs.
 - `specs/core.md`: shared infrastructure and people data.
 - `specs/audio.md`: generated chore announcement audio.
 
