@@ -9,7 +9,7 @@ from typing import Any
 
 from PIL import Image
 
-MIN_SAVE_INTERVAL_SECONDS = 0.0
+MIN_SAVE_INTERVAL_SECONDS = 1.0
 DEFAULT_OUTPUT_DIR = Path("data/face_samples/unlabeled")
 CROP_PADDING_RATIO = 0.35
 
@@ -17,7 +17,7 @@ CROP_PADDING_RATIO = 0.35
 @dataclass(frozen=True)
 class FaceSample:
     image_path: Path
-    metadata_path: Path
+    metadata_path: Path | None = None
 
 
 class FaceSampleCollector:
@@ -26,10 +26,14 @@ class FaceSampleCollector:
         output_dir: Path = DEFAULT_OUTPUT_DIR,
         *,
         min_interval_seconds: float = MIN_SAVE_INTERVAL_SECONDS,
+        save_full_frame: bool = False,
+        save_metadata: bool = False,
         clock: Any = time.monotonic,
     ) -> None:
         self.output_dir = output_dir
         self.min_interval_seconds = min_interval_seconds
+        self.save_full_frame = save_full_frame
+        self.save_metadata = save_metadata
         self.clock = clock
         self._last_saved_at: float | None = None
         self._counter = 0
@@ -47,6 +51,8 @@ class FaceSampleCollector:
         motion: dict[str, Any] | None = None,
         motion_error: str | None = None,
     ) -> FaceSample | None:
+        if face_box is None and not (self.save_full_frame or self.save_metadata):
+            return None
         now = self.clock()
         if self._last_saved_at is not None and now - self._last_saved_at < self.min_interval_seconds:
             return None
@@ -58,37 +64,42 @@ class FaceSampleCollector:
 
         self._counter += 1
         stem = f"frame-{self._counter:06d}"
-        image_path = self._session_dir / f"{stem}.jpg"
-        metadata_path = self._session_dir / f"{stem}.json"
+        image_path = self._session_dir / f"{stem}.jpg" if self.save_full_frame else None
+        metadata_path = self._session_dir / f"{stem}.json" if self.save_metadata else None
         crop_path = self._session_dir / f"{stem}-crop.jpg" if face_box is not None else None
 
-        image.save(image_path, quality=92)
+        if image_path is not None:
+            image.save(image_path, quality=92)
         if crop_path is not None and crop is not None:
             crop.save(crop_path, quality=92)
-        metadata_path.write_text(
-            json.dumps(
-                {
-                    "captured_at": datetime.now().isoformat(timespec="seconds"),
-                    "source": "reachy",
-                    "image_path": str(image_path),
-                    "detected": face_box is not None,
-                    "frame_size": {"width": image.width, "height": image.height},
-                    "face_box": _box_dict(face_box) if face_box is not None else None,
-                    "confidence": confidence,
-                    "landmarks": _landmarks_list(landmarks),
-                    "candidates": candidates or [],
-                    "tracking_target": _target_dict(tracking_target),
-                    "motion": motion,
-                    "motion_error": motion_error,
-                    "crop_box": _crop_dict(crop_box) if face_box is not None else None,
-                    "crop_path": str(crop_path) if crop_path is not None else None,
-                },
-                indent=2,
-            ),
-            encoding="utf-8",
-        )
+        if metadata_path is not None:
+            metadata_path.write_text(
+                json.dumps(
+                    {
+                        "captured_at": datetime.now().isoformat(timespec="seconds"),
+                        "source": "reachy",
+                        "image_path": str(image_path or crop_path),
+                        "detected": face_box is not None,
+                        "frame_size": {"width": image.width, "height": image.height},
+                        "face_box": _box_dict(face_box) if face_box is not None else None,
+                        "confidence": confidence,
+                        "landmarks": _landmarks_list(landmarks),
+                        "candidates": candidates or [],
+                        "tracking_target": _target_dict(tracking_target),
+                        "motion": motion,
+                        "motion_error": motion_error,
+                        "crop_box": _crop_dict(crop_box) if face_box is not None else None,
+                        "crop_path": str(crop_path) if crop_path is not None else None,
+                    },
+                    indent=2,
+                ),
+                encoding="utf-8",
+            )
         self._last_saved_at = now
-        return FaceSample(image_path=image_path, metadata_path=metadata_path)
+        saved_image_path = crop_path or image_path
+        if saved_image_path is None:
+            return None
+        return FaceSample(image_path=saved_image_path, metadata_path=metadata_path)
 
     def _new_session_dir(self) -> Path:
         started_at = datetime.now()

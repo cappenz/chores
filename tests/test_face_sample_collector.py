@@ -16,9 +16,28 @@ class FakeClock:
         return self.now
 
 
-def test_face_sample_collector_saves_crop_and_metadata(tmp_path):
+def test_face_sample_collector_saves_crop_by_default(tmp_path):
     clock = FakeClock(100.0)
     collector = FaceSampleCollector(tmp_path, clock=clock)
+    frame = np.zeros((100, 200, 3), dtype=np.uint8)
+    frame[:, :] = [30, 60, 90]
+
+    sample = collector.maybe_save(frame, (50, 20, 40, 30), confidence=0.91)
+
+    assert sample is not None
+    assert sample.image_path.exists()
+    assert sample.metadata_path is None
+    assert not sample.image_path.with_suffix(".json").exists()
+    with Image.open(sample.image_path) as crop:
+        assert crop.size == (68, 50)
+        red, _green, blue = crop.getpixel((crop.width // 2, crop.height // 2))
+        assert red > blue
+    assert list(sample.image_path.parent.glob("*.jpg")) == [sample.image_path]
+
+
+def test_face_sample_collector_can_save_full_frame_and_metadata(tmp_path):
+    clock = FakeClock(100.0)
+    collector = FaceSampleCollector(tmp_path, save_full_frame=True, save_metadata=True, clock=clock)
     frame = np.zeros((100, 200, 3), dtype=np.uint8)
     frame[:, :] = [30, 60, 90]
 
@@ -39,12 +58,15 @@ def test_face_sample_collector_saves_crop_and_metadata(tmp_path):
 
     assert sample is not None
     assert sample.image_path.exists()
+    assert sample.metadata_path is not None
     assert sample.metadata_path.exists()
-    with Image.open(sample.image_path) as image:
+    with Image.open(sample.image_path) as crop:
+        assert crop.size == (68, 50)
+    metadata = json.loads(sample.metadata_path.read_text(encoding="utf-8"))
+    with Image.open(metadata["image_path"]) as image:
         assert image.size == (200, 100)
         red, _green, blue = image.getpixel((60, 30))
         assert red > blue
-    metadata = json.loads(sample.metadata_path.read_text(encoding="utf-8"))
     assert metadata["source"] == "reachy"
     assert metadata["detected"] is True
     assert metadata["frame_size"] == {"width": 200, "height": 100}
@@ -66,15 +88,24 @@ def test_face_sample_collector_saves_crop_and_metadata(tmp_path):
         assert crop.size == (68, 50)
 
 
-def test_face_sample_collector_saves_negative_attempt_metadata(tmp_path):
+def test_face_sample_collector_skips_negative_attempts_by_default(tmp_path):
     clock = FakeClock(100.0)
     collector = FaceSampleCollector(tmp_path, clock=clock)
+    frame = np.zeros((100, 200, 3), dtype=np.uint8)
+
+    assert collector.maybe_save(frame) is None
+
+
+def test_face_sample_collector_can_save_negative_attempt_metadata(tmp_path):
+    clock = FakeClock(100.0)
+    collector = FaceSampleCollector(tmp_path, save_full_frame=True, save_metadata=True, clock=clock)
     frame = np.zeros((100, 200, 3), dtype=np.uint8)
 
     sample = collector.maybe_save(frame)
 
     assert sample is not None
     assert sample.image_path.exists()
+    assert sample.metadata_path is not None
     metadata = json.loads(sample.metadata_path.read_text(encoding="utf-8"))
     assert metadata["detected"] is False
     assert metadata["face_box"] is None
@@ -90,11 +121,11 @@ def test_face_sample_collector_saves_negative_attempt_metadata(tmp_path):
 
 def test_face_sample_collector_rate_limits_saves(tmp_path):
     clock = FakeClock(100.0)
-    collector = FaceSampleCollector(tmp_path, min_interval_seconds=5.0, clock=clock)
+    collector = FaceSampleCollector(tmp_path, clock=clock)
     frame = np.zeros((100, 100, 3), dtype=np.uint8)
 
     assert collector.maybe_save(frame, (20, 20, 20, 20)) is not None
-    clock.now += 4.9
+    clock.now += 0.9
     assert collector.maybe_save(frame, (20, 20, 20, 20)) is None
     clock.now += 0.1
     assert collector.maybe_save(frame, (20, 20, 20, 20)) is not None
