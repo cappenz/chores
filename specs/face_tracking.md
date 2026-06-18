@@ -24,8 +24,15 @@ The normal frame source is:
 - frame layout: OpenCV BGR image, shape `(height, width, 3)`, dtype `uint8`
 - `None` means the camera is unavailable or no frame is ready
 
-Face tracking code must treat daemon frames as BGR. Any saved images or model
-inputs that require RGB must convert explicitly.
+Face tracking code must treat daemon frames as BGR. OpenCV detector inputs may
+use the BGR frame directly unless a specific model API says otherwise. Any saved
+images, PIL images, browser-visible previews, or model inputs that require RGB
+must convert explicitly from BGR to RGB first.
+
+If a real-world orange object appears blue in a saved sample, that is evidence
+that the BGR frame was handed to an RGB consumer without conversion. The camera
+frame itself should not be fixed globally; conversion should happen at the
+boundary where RGB is required.
 
 ## Detection Model
 
@@ -48,9 +55,9 @@ Detector output should include:
   - `y`: `-1.0` top, `0.0` center, `1.0` bottom
 - optional aligned face crop for sample collection or recognition
 
-The model file should be managed as a local artifact with a clear source URL and
-checksum documented near the loader. It should not be downloaded during normal
-runtime.
+The YuNet model file is small enough to check into the repository. The loader
+should use the checked-in artifact, document the source URL near the loader, and
+verify a documented checksum before use.
 
 ## Detection Policy
 
@@ -106,6 +113,10 @@ Face sample collection should save data that is useful for recognition:
 Saved crops should be aligned using the detector landmarks. Alignment should be
 deterministic so the same face pose produces comparable recognition inputs.
 
+Collecting many unlabeled samples is acceptable; disk space is not the primary
+constraint. The first implementation should focus on preserving useful metadata
+and correct color conversion rather than aggressively limiting sample volume.
+
 Samples are unlabeled by default. A later labeling workflow can associate crops
 with known people from `core/people` or another public people API, but `reachy/`
 must not reach into unrelated component internals.
@@ -143,12 +154,12 @@ cover pure logic:
 - smoothing and jump rejection
 - sample metadata fields for boxes, landmarks, and aligned crops
 
-Model validation tests should be marked with the pytest `model` marker and run
-through `make test-model`, not through the regular `make test` suite. These tests
-may load local model artifacts and representative image fixtures to check
-detector quality, threshold behavior, landmark shape, and recognition embedding
-stability. They still should not require the Reachy daemon or live camera unless
-they are also marked as manual.
+Model validation for this step should only prove that the model can be obtained,
+loaded, and called without raising an error. These tests should be marked with
+the pytest `model` marker and run through `make test-model`, not through the
+regular `make test` suite. They should use the checked-in model artifact but
+should not check whether the detector works correctly yet because there is no
+representative face/non-face fixture dataset.
 
 Manual tests may use the real Reachy camera or simulator and should be explicit
 entry points outside `make test`.

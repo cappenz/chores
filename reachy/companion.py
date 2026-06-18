@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import math
 import time
 from collections.abc import Callable
@@ -15,7 +16,15 @@ DEFAULT_TRACKING_HZ = 2.0
 DEFAULT_MEDIA_BACKEND = "default"
 NO_MEDIA_BACKEND = "no_media"
 DEFAULT_CONNECT_RETRY_SECONDS = 3.0
+DEFAULT_FACE_CONFIDENCE_THRESHOLD = 0.8
+DEFAULT_MIN_FACE_SIZE_PIXELS = 40
 LOG_THROTTLE_SECONDS = 30.0
+YUNET_MODEL_PATH = Path(__file__).resolve().parent / "models" / "face_detection_yunet_2023mar.onnx"
+YUNET_MODEL_URL = (
+    "https://media.githubusercontent.com/media/opencv/opencv_zoo/main/"
+    "models/face_detection_yunet/face_detection_yunet_2023mar.onnx"
+)
+YUNET_MODEL_SHA256 = "8f2383e4dd3cfbb4553ea8718107fc0423210dc964f9f4280604804ed2552fa4"
 
 
 class ReachyEmotion(StrEnum):
@@ -59,12 +68,16 @@ class ReachyConfig:
     connect_retry_seconds: float = DEFAULT_CONNECT_RETRY_SECONDS
     max_connect_retry_seconds: float | None = None
     reconnect_on_command_failure: bool = True
+    face_confidence_threshold: float = DEFAULT_FACE_CONFIDENCE_THRESHOLD
+    min_face_size_pixels: int = DEFAULT_MIN_FACE_SIZE_PIXELS
 
 
 @dataclass(frozen=True)
 class FaceDetection:
     target: tuple[float, float]
     box: tuple[int, int, int, int]
+    confidence: float = 1.0
+    landmarks: tuple[tuple[float, float], ...] = ()
     sample_path: Path | None = None
 
 
@@ -268,10 +281,21 @@ class SdkReachyCompanion:
         detection = self._face_detector.detect(frame)
         if detection is None or self._face_sample_collector is None:
             return detection
-        sample = self._face_sample_collector.maybe_save(frame, detection.box)
+        sample = self._face_sample_collector.maybe_save(
+            frame,
+            detection.box,
+            confidence=detection.confidence,
+            landmarks=detection.landmarks,
+        )
         if sample is None:
             return detection
-        return FaceDetection(detection.target, detection.box, sample.image_path)
+        return FaceDetection(
+            detection.target,
+            detection.box,
+            detection.confidence,
+            detection.landmarks,
+            sample.image_path,
+        )
 
     def _notify_face_sample_saved(self, detection: FaceDetection) -> None:
         if detection.sample_path is not None and self._on_face_sample_saved is not None:
@@ -308,26 +332,54 @@ class SdkReachyCompanion:
 
 
 class FaceDetector:
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        *,
+        confidence_threshold: float = DEFAULT_FACE_CONFIDENCE_THRESHOLD,
+        min_face_size_pixels: int = DEFAULT_MIN_FACE_SIZE_PIXELS,
+        model_path: Path = YUNET_MODEL_PATH,
+    ) -> None:
         cv2 = _cv2()
         self._cv2 = cv2
-        self._cascade = cv2.CascadeClassifier(
-            cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
+        self._confidence_threshold = confidence_threshold
+        self._min_face_size_pixels = min_face_size_pixels
+        self._model_path = model_path
+        _verify_model_artifact(model_path)
+        self._detector = cv2.FaceDetectorYN.create(
+            str(model_path),
+            "",
+            (320, 320),
+            confidence_threshold,
+            0.3,
+            5000,
         )
 
     def detect(self, frame) -> FaceDetection | None:
-        cv2 = self._cv2
-        gray = cv2.cvtColor(frame, cv2.COLOR_RGB2GRAY)
-        faces = self._cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5)
-        if len(faces) == 0:
+        if frame is None:
             return None
-        height, width = gray.shape[:2]
-        x, y, w, h = max(faces, key=lambda face: face[2] * face[3])
-        center_x = (x + w / 2) / width
-        center_y = (y + h / 2) / height
-        return FaceDetection(
-            target=((center_x - 0.5) * 2.0, (center_y - 0.5) * 2.0),
-            box=(int(x), int(y), int(w), int(h)),
+        height, width = frame.shape[:2]
+        self._detector.setInputSize((width, height))
+        _, faces = self._detector.detect(frame)
+        if faces is None or len(faces) == 0:
+            return None
+        detections = [
+            detection
+            for face in faces
+            if (
+                detection := _parse_yunet_face(
+                    face,
+                    frame_shape=frame.shape,
+                    confidence_threshold=self._confidence_threshold,
+                    min_face_size_pixels=self._min_face_size_pixels,
+                )
+            )
+            is not None
+        ]
+        if not detections:
+            return None
+        return max(
+            detections,
+            key=lambda detection: detection.confidence * detection.box[2] * detection.box[3],
         )
 
 
@@ -540,7 +592,14 @@ def _create_sdk_companion(
     if not config.face_tracking_enabled and media_backend == DEFAULT_MEDIA_BACKEND:
         media_backend = NO_MEDIA_BACKEND
     mini = ReachyMini(connection_mode="localhost_only", media_backend=media_backend)
-    face_detector = FaceDetector() if config.face_tracking_enabled else None
+    face_detector = (
+        FaceDetector(
+            confidence_threshold=config.face_confidence_threshold,
+            min_face_size_pixels=config.min_face_size_pixels,
+        )
+        if config.face_tracking_enabled
+        else None
+    )
     return SdkReachyCompanion(
         mini,
         create_head_pose=create_head_pose,
@@ -628,6 +687,57 @@ def _smooth_target(
         previous[0] * (1.0 - alpha) + current[0] * alpha,
         previous[1] * (1.0 - alpha) + current[1] * alpha,
     )
+
+
+def _parse_yunet_face(
+    face,
+    *,
+    frame_shape: tuple[int, ...],
+    confidence_threshold: float,
+    min_face_size_pixels: int,
+) -> FaceDetection | None:
+    height, width = frame_shape[:2]
+    x, y, box_width, box_height = (float(value) for value in face[:4])
+    confidence = float(face[14])
+    if confidence < confidence_threshold:
+        return None
+    if box_width < min_face_size_pixels or box_height < min_face_size_pixels:
+        return None
+
+    left = max(0, round(x))
+    top = max(0, round(y))
+    right = min(width, round(x + box_width))
+    bottom = min(height, round(y + box_height))
+    clipped_width = right - left
+    clipped_height = bottom - top
+    if clipped_width <= 0 or clipped_height <= 0:
+        return None
+
+    center_x = (left + clipped_width / 2) / width
+    center_y = (top + clipped_height / 2) / height
+    landmarks = tuple(
+        (float(face[index]), float(face[index + 1]))
+        for index in range(4, 14, 2)
+    )
+    return FaceDetection(
+        target=((center_x - 0.5) * 2.0, (center_y - 0.5) * 2.0),
+        box=(left, top, clipped_width, clipped_height),
+        confidence=confidence,
+        landmarks=landmarks,
+    )
+
+
+def _verify_model_artifact(model_path: Path) -> None:
+    if not model_path.exists():
+        raise FileNotFoundError(
+            f"YuNet model artifact is missing: {model_path}. Source: {YUNET_MODEL_URL}"
+        )
+    digest = hashlib.sha256(model_path.read_bytes()).hexdigest()
+    if digest != YUNET_MODEL_SHA256:
+        raise ValueError(
+            f"YuNet model checksum mismatch for {model_path}: expected "
+            f"{YUNET_MODEL_SHA256}, got {digest}"
+        )
 
 
 def _reachy_imports():

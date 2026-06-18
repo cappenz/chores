@@ -3,6 +3,8 @@ from __future__ import annotations
 import asyncio
 from unittest.mock import patch
 
+import pytest
+
 from kitchen_agent import prepare_reachy_for_startup
 from reachy.companion import (
     DEFAULT_TRACKING_HZ,
@@ -12,6 +14,7 @@ from reachy.companion import (
     ReachyEmotion,
     RetryingReachyCompanion,
     SdkReachyCompanion,
+    _parse_yunet_face,
     _smooth_target,
     run_reachy_companion,
 )
@@ -254,3 +257,42 @@ def test_unknown_emotion_is_ignored():
 
 def test_face_tracking_smoothing_reduces_target_jumps():
     assert _smooth_target((0.0, 0.0), (1.0, -1.0), alpha=0.25) == (0.25, -0.25)
+
+
+def test_parse_yunet_face_preserves_confidence_landmarks_and_target():
+    detection = _parse_yunet_face(
+        [50, 20, 40, 30, 60, 30, 80, 30, 70, 40, 62, 50, 78, 50, 0.91],
+        frame_shape=(100, 200, 3),
+        confidence_threshold=0.8,
+        min_face_size_pixels=20,
+    )
+
+    assert detection is not None
+    assert detection.box == (50, 20, 40, 30)
+    assert detection.confidence == 0.91
+    assert detection.landmarks == (
+        (60.0, 30.0),
+        (80.0, 30.0),
+        (70.0, 40.0),
+        (62.0, 50.0),
+        (78.0, 50.0),
+    )
+    assert detection.target == pytest.approx((-0.3, -0.3))
+
+
+def test_parse_yunet_face_rejects_low_confidence_or_tiny_boxes():
+    low_confidence = _parse_yunet_face(
+        [50, 20, 40, 30, 60, 30, 80, 30, 70, 40, 62, 50, 78, 50, 0.5],
+        frame_shape=(100, 200, 3),
+        confidence_threshold=0.8,
+        min_face_size_pixels=20,
+    )
+    tiny = _parse_yunet_face(
+        [50, 20, 10, 30, 60, 30, 80, 30, 70, 40, 62, 50, 78, 50, 0.91],
+        frame_shape=(100, 200, 3),
+        confidence_threshold=0.8,
+        min_face_size_pixels=20,
+    )
+
+    assert low_confidence is None
+    assert tiny is None

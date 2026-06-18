@@ -22,17 +22,26 @@ def test_face_sample_collector_saves_crop_and_metadata(tmp_path):
     frame = np.zeros((100, 200, 3), dtype=np.uint8)
     frame[:, :] = [30, 60, 90]
 
-    sample = collector.maybe_save(frame, (50, 20, 40, 30))
+    sample = collector.maybe_save(
+        frame,
+        (50, 20, 40, 30),
+        confidence=0.91,
+        landmarks=((55.5, 25.5), (80.5, 25.5)),
+    )
 
     assert sample is not None
     assert sample.image_path.exists()
     assert sample.metadata_path.exists()
     with Image.open(sample.image_path) as image:
         assert image.size == (68, 50)
+        red, _green, blue = image.getpixel((image.width // 2, image.height // 2))
+        assert red > blue
     metadata = json.loads(sample.metadata_path.read_text(encoding="utf-8"))
     assert metadata["source"] == "reachy"
     assert metadata["frame_size"] == {"width": 200, "height": 100}
     assert metadata["face_box"] == {"x": 50, "y": 20, "width": 40, "height": 30}
+    assert metadata["confidence"] == 0.91
+    assert metadata["landmarks"] == [{"x": 55.5, "y": 25.5}, {"x": 80.5, "y": 25.5}]
     assert metadata["crop_box"] == {"left": 36, "top": 10, "right": 104, "bottom": 60}
 
 

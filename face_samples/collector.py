@@ -35,12 +35,19 @@ class FaceSampleCollector:
         self._counter = 0
         self._session_dir = self._new_session_dir()
 
-    def maybe_save(self, frame, face_box: tuple[int, int, int, int]) -> FaceSample | None:
+    def maybe_save(
+        self,
+        frame,
+        face_box: tuple[int, int, int, int],
+        *,
+        confidence: float | None = None,
+        landmarks: tuple[tuple[float, float], ...] = (),
+    ) -> FaceSample | None:
         now = self.clock()
         if self._last_saved_at is not None and now - self._last_saved_at < self.min_interval_seconds:
             return None
 
-        image = Image.fromarray(frame)
+        image = Image.fromarray(_bgr_to_rgb(frame))
         crop_box = _expanded_crop_box(face_box, image.size)
         crop = image.crop(crop_box)
         self._session_dir.mkdir(parents=True, exist_ok=True)
@@ -59,6 +66,8 @@ class FaceSampleCollector:
                     "image_path": str(image_path),
                     "frame_size": {"width": image.width, "height": image.height},
                     "face_box": _box_dict(face_box),
+                    "confidence": confidence,
+                    "landmarks": _landmarks_list(landmarks),
                     "crop_box": _crop_dict(crop_box),
                 },
                 indent=2,
@@ -92,6 +101,10 @@ def _expanded_crop_box(
     return left, top, right, bottom
 
 
+def _bgr_to_rgb(frame):
+    return frame[..., ::-1]
+
+
 def _box_dict(face_box: tuple[int, int, int, int]) -> dict[str, int]:
     x, y, width, height = face_box
     return {"x": x, "y": y, "width": width, "height": height}
@@ -100,3 +113,7 @@ def _box_dict(face_box: tuple[int, int, int, int]) -> dict[str, int]:
 def _crop_dict(crop_box: tuple[int, int, int, int]) -> dict[str, int]:
     left, top, right, bottom = crop_box
     return {"left": left, "top": top, "right": right, "bottom": bottom}
+
+
+def _landmarks_list(landmarks: tuple[tuple[float, float], ...]) -> list[dict[str, float]]:
+    return [{"x": x, "y": y} for x, y in landmarks]
