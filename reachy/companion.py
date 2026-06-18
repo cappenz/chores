@@ -19,6 +19,7 @@ DEFAULT_CONNECT_RETRY_SECONDS = 3.0
 YUNET_RAW_SCORE_THRESHOLD = 0.0
 DEFAULT_FACE_CONFIDENCE_THRESHOLD = 0.8
 DEFAULT_MIN_FACE_SIZE_PIXELS = 40
+DEFAULT_FACE_MISS_GRACE_SECONDS = 5.0
 LOG_THROTTLE_SECONDS = 30.0
 YUNET_MODEL_PATH = Path(__file__).resolve().parent / "models" / "face_detection_yunet_2023mar.onnx"
 YUNET_MODEL_URL = (
@@ -71,6 +72,7 @@ class ReachyConfig:
     reconnect_on_command_failure: bool = True
     face_confidence_threshold: float = DEFAULT_FACE_CONFIDENCE_THRESHOLD
     min_face_size_pixels: int = DEFAULT_MIN_FACE_SIZE_PIXELS
+    face_miss_grace_seconds: float = DEFAULT_FACE_MISS_GRACE_SECONDS
 
 
 @dataclass(frozen=True)
@@ -278,6 +280,8 @@ class SdkReachyCompanion:
     async def _face_tracking_loop(self) -> None:
         interval = 1.0 / max(self._config.tracking_hz, 1.0)
         smoothed: tuple[float, float] | None = None
+        last_seen_at: float | None = None
+        resting_after_miss = False
         try:
             while self._awake and not self._closed:
                 started = time.monotonic()
@@ -286,17 +290,26 @@ class SdkReachyCompanion:
                 motion: dict[str, Any] | None = None
                 motion_error: str | None = None
                 if detection is not None:
+                    last_seen_at = started
+                    resting_after_miss = False
                     smoothed = _smooth_target(smoothed, detection.target)
                     try:
                         motion = await self._look_at_normalized_target(smoothed)
                     except Exception as error:
                         motion_error = str(error)
                 else:
-                    smoothed = None
-                    try:
-                        motion = await self._look_at_rest()
-                    except Exception as error:
-                        motion_error = str(error)
+                    if _should_rest_after_face_miss(
+                        now=started,
+                        last_seen_at=last_seen_at,
+                        grace_seconds=self._config.face_miss_grace_seconds,
+                        already_resting=resting_after_miss,
+                    ):
+                        smoothed = None
+                        resting_after_miss = True
+                        try:
+                            motion = await self._look_at_rest()
+                        except Exception as error:
+                            motion_error = str(error)
                 sample_path = await asyncio.to_thread(
                     self._save_face_attempt,
                     attempt,
@@ -347,7 +360,7 @@ class SdkReachyCompanion:
     async def _look_at_normalized_target(self, target: tuple[float, float]) -> dict[str, Any]:
         x, y = target
         yaw = max(-25.0, min(25.0, x * 25.0))
-        pitch = max(-15.0, min(15.0, -y * 15.0))
+        pitch = max(-15.0, min(15.0, y * 15.0))
         command = {
             "kind": "track_face",
             "target": {"x": x, "y": y},
@@ -773,6 +786,20 @@ def _smooth_target(
         previous[0] * (1.0 - alpha) + current[0] * alpha,
         previous[1] * (1.0 - alpha) + current[1] * alpha,
     )
+
+
+def _should_rest_after_face_miss(
+    *,
+    now: float,
+    last_seen_at: float | None,
+    grace_seconds: float,
+    already_resting: bool,
+) -> bool:
+    if already_resting:
+        return False
+    if last_seen_at is None:
+        return True
+    return now - last_seen_at >= grace_seconds
 
 
 def _parse_yunet_candidate(

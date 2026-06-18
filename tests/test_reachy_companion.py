@@ -18,6 +18,7 @@ from reachy.companion import (
     _candidate_to_detection,
     _candidate_metadata,
     _parse_yunet_face,
+    _should_rest_after_face_miss,
     _smooth_target,
     run_reachy_companion,
 )
@@ -344,13 +345,36 @@ def test_face_tracking_uses_goto_target_for_head_motion():
         config=ReachyConfig(enabled=True, face_tracking_enabled=False),
     )
 
-    asyncio.run(companion._look_at_normalized_target((0.5, -0.5)))
+    asyncio.run(companion._look_at_normalized_target((0.5, 0.5)))
 
     assert mini.calls == [
         (
             "goto_target",
             {
                 "head": {"head_pose": {"yaw": 12.5, "pitch": 7.5, "degrees": True}},
+                "duration": 0.25,
+                "method": "minjerk",
+            },
+        )
+    ]
+
+
+def test_face_tracking_uses_negative_pitch_for_faces_high_in_frame():
+    mini = FakeMini()
+    companion = SdkReachyCompanion(
+        mini,
+        create_head_pose=fake_head_pose,
+        config=ReachyConfig(enabled=True, face_tracking_enabled=False),
+    )
+
+    motion = asyncio.run(companion._look_at_normalized_target((0.0, -0.5)))
+
+    assert motion["pitch"] == -7.5
+    assert mini.calls == [
+        (
+            "goto_target",
+            {
+                "head": {"head_pose": {"yaw": 0.0, "pitch": -7.5, "degrees": True}},
                 "duration": 0.25,
                 "method": "minjerk",
             },
@@ -378,3 +402,24 @@ def test_face_tracking_returns_to_rest_without_face():
             },
         )
     ]
+
+
+def test_face_tracking_waits_before_resting_after_recent_face_miss():
+    assert not _should_rest_after_face_miss(
+        now=104.9,
+        last_seen_at=100.0,
+        grace_seconds=5.0,
+        already_resting=False,
+    )
+    assert _should_rest_after_face_miss(
+        now=105.0,
+        last_seen_at=100.0,
+        grace_seconds=5.0,
+        already_resting=False,
+    )
+    assert not _should_rest_after_face_miss(
+        now=110.0,
+        last_seen_at=100.0,
+        grace_seconds=5.0,
+        already_resting=True,
+    )
