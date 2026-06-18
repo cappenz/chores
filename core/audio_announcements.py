@@ -7,7 +7,7 @@ from elevenlabs.client import ElevenLabs
 from elevenlabs.play import play
 from openai import OpenAI
 
-ANNOUNCEMENT_VOICE_ID = "inGcvmoPgbvKUk9uCvHu"
+ANNOUNCEMENT_VOICE_ID = "QvlD90AkjGTCqc9685Rq"
 ANNOUNCEMENT_TTS_MODEL = "eleven_multilingual_v2"
 
 
