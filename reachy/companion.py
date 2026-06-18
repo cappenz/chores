@@ -12,7 +12,7 @@ from typing import Any, Protocol
 
 from face_samples import FaceSampleCollector
 
-DEFAULT_TRACKING_HZ = 2.0
+DEFAULT_TRACKING_HZ = 5.0
 DEFAULT_MEDIA_BACKEND = "default"
 NO_MEDIA_BACKEND = "no_media"
 DEFAULT_CONNECT_RETRY_SECONDS = 3.0
@@ -20,7 +20,7 @@ YUNET_RAW_SCORE_THRESHOLD = 0.0
 DEFAULT_FACE_CONFIDENCE_THRESHOLD = 0.8
 DEFAULT_MIN_FACE_SIZE_PIXELS = 40
 DEFAULT_FACE_MISS_GRACE_SECONDS = 5.0
-DEFAULT_FACE_TRACKING_DEADBAND = 0.08
+DEFAULT_FACE_TRACKING_DEADBAND = 0.12
 DEFAULT_FACE_TRACKING_YAW_STEP_DEGREES = 4.0
 DEFAULT_FACE_TRACKING_PITCH_STEP_DEGREES = 3.0
 DEFAULT_FACE_TRACKING_MAX_YAW_DEGREES = 55.0
@@ -396,16 +396,15 @@ class SdkReachyCompanion:
             "delta_pitch": delta_pitch,
             "yaw": yaw,
             "pitch": pitch,
-            "duration": 0.25,
-            "method": "minjerk",
+            "skipped": delta_yaw == 0.0 and delta_pitch == 0.0,
+            "method": "set_target",
         }
-        async with self._motion_lock:
-            await asyncio.to_thread(
-                self._mini.goto_target,
-                head=self._create_head_pose(yaw=yaw, pitch=pitch, degrees=True),
-                duration=command["duration"],
-                method=command["method"],
-            )
+        if not command["skipped"]:
+            async with self._motion_lock:
+                await asyncio.to_thread(
+                    self._mini.set_target,
+                    head=self._create_head_pose(yaw=yaw, pitch=pitch, degrees=True),
+                )
         return (yaw, pitch), command
 
     async def _look_at_rest(self) -> dict[str, Any]:

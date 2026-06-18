@@ -70,9 +70,9 @@ def test_enabled_reachy_uses_retrying_companion():
     assert isinstance(companion, RetryingReachyCompanion)
 
 
-def test_default_face_tracking_rate_is_two_hz():
-    assert DEFAULT_TRACKING_HZ == 2.0
-    assert ReachyConfig().tracking_hz == 2.0
+def test_default_face_tracking_rate_is_five_hz():
+    assert DEFAULT_TRACKING_HZ == 5.0
+    assert ReachyConfig().tracking_hz == 5.0
 
 
 def test_retrying_companion_reconnects_after_initial_failure():
@@ -338,7 +338,7 @@ def test_parse_yunet_face_allows_edge_clipped_boxes_for_tracking():
     assert detection.box == (50, 2, 40, 30)
 
 
-def test_face_tracking_uses_goto_target_for_head_motion():
+def test_face_tracking_uses_set_target_for_head_motion():
     mini = FakeMini()
     companion = SdkReachyCompanion(
         mini,
@@ -353,13 +353,13 @@ def test_face_tracking_uses_goto_target_for_head_motion():
     assert motion["previous_pitch"] == 5.0
     assert motion["delta_yaw"] == -2.0
     assert motion["delta_pitch"] == 1.5
+    assert motion["skipped"] is False
+    assert motion["method"] == "set_target"
     assert mini.calls == [
         (
-            "goto_target",
+            "set_target",
             {
                 "head": {"head_pose": {"yaw": 8.0, "pitch": 6.5, "degrees": True}},
-                "duration": 0.25,
-                "method": "minjerk",
             },
         )
     ]
@@ -379,14 +379,29 @@ def test_face_tracking_uses_negative_pitch_for_faces_high_in_frame():
     assert motion["pitch"] == -1.5
     assert mini.calls == [
         (
-            "goto_target",
+            "set_target",
             {
                 "head": {"head_pose": {"yaw": 0.0, "pitch": -1.5, "degrees": True}},
-                "duration": 0.25,
-                "method": "minjerk",
             },
         )
     ]
+
+
+def test_face_tracking_skips_motion_inside_deadband():
+    mini = FakeMini()
+    companion = SdkReachyCompanion(
+        mini,
+        create_head_pose=fake_head_pose,
+        config=ReachyConfig(enabled=True, face_tracking_enabled=False),
+    )
+
+    angles, motion = asyncio.run(companion._look_at_normalized_target((0.05, -0.05), (10.0, -5.0)))
+
+    assert angles == (10.0, -5.0)
+    assert motion["skipped"] is True
+    assert motion["delta_yaw"] == 0.0
+    assert motion["delta_pitch"] == 0.0
+    assert mini.calls == []
 
 
 def test_face_tracking_returns_to_rest_without_face():
@@ -436,7 +451,7 @@ def test_face_tracking_nudges_angles_with_deadband_and_limits():
     assert _nudge_tracking_angles(
         target=(0.5, -0.5),
         current_angles=(10.0, -5.0),
-        deadband=0.08,
+        deadband=0.12,
         yaw_step_degrees=4.0,
         pitch_step_degrees=3.0,
         max_yaw_degrees=55.0,
@@ -445,7 +460,7 @@ def test_face_tracking_nudges_angles_with_deadband_and_limits():
     assert _nudge_tracking_angles(
         target=(0.05, -0.05),
         current_angles=(10.0, -5.0),
-        deadband=0.08,
+        deadband=0.12,
         yaw_step_degrees=4.0,
         pitch_step_degrees=3.0,
         max_yaw_degrees=55.0,
@@ -454,7 +469,7 @@ def test_face_tracking_nudges_angles_with_deadband_and_limits():
     assert _nudge_tracking_angles(
         target=(1.0, -1.0),
         current_angles=(54.0, -29.0),
-        deadband=0.08,
+        deadband=0.12,
         yaw_step_degrees=4.0,
         pitch_step_degrees=3.0,
         max_yaw_degrees=55.0,
