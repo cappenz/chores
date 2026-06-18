@@ -9,7 +9,7 @@ from typing import Any
 
 from PIL import Image
 
-MIN_SAVE_INTERVAL_SECONDS = 5.0
+MIN_SAVE_INTERVAL_SECONDS = 0.0
 DEFAULT_OUTPUT_DIR = Path("data/face_samples/unlabeled")
 CROP_PADDING_RATIO = 0.35
 
@@ -38,37 +38,50 @@ class FaceSampleCollector:
     def maybe_save(
         self,
         frame,
-        face_box: tuple[int, int, int, int],
+        face_box: tuple[int, int, int, int] | None = None,
         *,
         confidence: float | None = None,
         landmarks: tuple[tuple[float, float], ...] = (),
+        candidates: list[dict[str, Any]] | None = None,
+        tracking_target: tuple[float, float] | None = None,
+        motion: dict[str, Any] | None = None,
+        motion_error: str | None = None,
     ) -> FaceSample | None:
         now = self.clock()
         if self._last_saved_at is not None and now - self._last_saved_at < self.min_interval_seconds:
             return None
 
         image = Image.fromarray(_bgr_to_rgb(frame))
-        crop_box = _expanded_crop_box(face_box, image.size)
-        crop = image.crop(crop_box)
+        crop_box = _expanded_crop_box(face_box, image.size) if face_box is not None else None
+        crop = image.crop(crop_box) if crop_box is not None else None
         self._session_dir.mkdir(parents=True, exist_ok=True)
 
         self._counter += 1
-        stem = f"face-{self._counter:06d}"
+        stem = f"frame-{self._counter:06d}"
         image_path = self._session_dir / f"{stem}.jpg"
         metadata_path = self._session_dir / f"{stem}.json"
+        crop_path = self._session_dir / f"{stem}-crop.jpg" if face_box is not None else None
 
-        crop.save(image_path, quality=92)
+        image.save(image_path, quality=92)
+        if crop_path is not None and crop is not None:
+            crop.save(crop_path, quality=92)
         metadata_path.write_text(
             json.dumps(
                 {
                     "captured_at": datetime.now().isoformat(timespec="seconds"),
                     "source": "reachy",
                     "image_path": str(image_path),
+                    "detected": face_box is not None,
                     "frame_size": {"width": image.width, "height": image.height},
-                    "face_box": _box_dict(face_box),
+                    "face_box": _box_dict(face_box) if face_box is not None else None,
                     "confidence": confidence,
                     "landmarks": _landmarks_list(landmarks),
-                    "crop_box": _crop_dict(crop_box),
+                    "candidates": candidates or [],
+                    "tracking_target": _target_dict(tracking_target),
+                    "motion": motion,
+                    "motion_error": motion_error,
+                    "crop_box": _crop_dict(crop_box) if face_box is not None else None,
+                    "crop_path": str(crop_path) if crop_path is not None else None,
                 },
                 indent=2,
             ),
@@ -117,3 +130,9 @@ def _crop_dict(crop_box: tuple[int, int, int, int]) -> dict[str, int]:
 
 def _landmarks_list(landmarks: tuple[tuple[float, float], ...]) -> list[dict[str, float]]:
     return [{"x": x, "y": y} for x, y in landmarks]
+
+
+def _target_dict(target: tuple[float, float] | None) -> dict[str, float] | None:
+    if target is None:
+        return None
+    return {"x": target[0], "y": target[1]}

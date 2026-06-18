@@ -16,6 +16,7 @@ DEFAULT_TRACKING_HZ = 2.0
 DEFAULT_MEDIA_BACKEND = "default"
 NO_MEDIA_BACKEND = "no_media"
 DEFAULT_CONNECT_RETRY_SECONDS = 3.0
+YUNET_RAW_SCORE_THRESHOLD = 0.0
 DEFAULT_FACE_CONFIDENCE_THRESHOLD = 0.8
 DEFAULT_MIN_FACE_SIZE_PIXELS = 40
 LOG_THROTTLE_SECONDS = 30.0
@@ -73,12 +74,27 @@ class ReachyConfig:
 
 
 @dataclass(frozen=True)
+class FaceCandidate:
+    target: tuple[float, float]
+    box: tuple[int, int, int, int]
+    confidence: float
+    landmarks: tuple[tuple[float, float], ...] = ()
+
+
+@dataclass(frozen=True)
 class FaceDetection:
     target: tuple[float, float]
     box: tuple[int, int, int, int]
     confidence: float = 1.0
     landmarks: tuple[tuple[float, float], ...] = ()
     sample_path: Path | None = None
+
+
+@dataclass(frozen=True)
+class FaceDetectionAttempt:
+    frame: Any | None
+    detection: FaceDetection | None
+    candidates: tuple[FaceCandidate, ...] = ()
 
 
 class NoOpReachyCompanion:
@@ -265,51 +281,106 @@ class SdkReachyCompanion:
         try:
             while self._awake and not self._closed:
                 started = time.monotonic()
-                detection = await asyncio.to_thread(self._detect_face)
+                attempt = await asyncio.to_thread(self._detect_face)
+                detection = attempt.detection
+                motion: dict[str, Any] | None = None
+                motion_error: str | None = None
                 if detection is not None:
-                    self._notify_face_sample_saved(detection)
                     smoothed = _smooth_target(smoothed, detection.target)
-                    await self._look_at_normalized_target(smoothed)
+                    try:
+                        motion = await self._look_at_normalized_target(smoothed)
+                    except Exception as error:
+                        motion_error = str(error)
+                else:
+                    smoothed = None
+                    try:
+                        motion = await self._look_at_rest()
+                    except Exception as error:
+                        motion_error = str(error)
+                sample_path = await asyncio.to_thread(
+                    self._save_face_attempt,
+                    attempt,
+                    motion,
+                    motion_error,
+                )
+                if sample_path is not None and self._on_face_sample_saved is not None:
+                    self._on_face_sample_saved(sample_path)
+                if motion_error is not None:
+                    raise RuntimeError(f"Face tracking motion failed: {motion_error}")
                 elapsed = time.monotonic() - started
                 await asyncio.sleep(max(0.0, interval - elapsed))
         except asyncio.CancelledError:
             pass
+        except Exception as error:
+            print(f"[reachy] Face tracking loop stopped: {error}", flush=True)
 
-    def _detect_face(self) -> FaceDetection | None:
+    def _detect_face(self) -> FaceDetectionAttempt:
         frame = self._mini.media.get_frame()
         assert self._face_detector is not None
-        detection = self._face_detector.detect(frame)
-        if detection is None or self._face_sample_collector is None:
-            return detection
+        if frame is None:
+            return FaceDetectionAttempt(None, None)
+        candidates = self._face_detector.detect_candidates(frame)
+        detection = self._face_detector.select_detection(candidates)
+        return FaceDetectionAttempt(frame, detection, tuple(candidates))
+
+    def _save_face_attempt(
+        self,
+        attempt: FaceDetectionAttempt,
+        motion: dict[str, Any] | None,
+        motion_error: str | None,
+    ) -> Path | None:
+        if attempt.frame is None or self._face_sample_collector is None:
+            return None
+        detection = attempt.detection
         sample = self._face_sample_collector.maybe_save(
-            frame,
-            detection.box,
-            confidence=detection.confidence,
-            landmarks=detection.landmarks,
+            attempt.frame,
+            detection.box if detection is not None else None,
+            confidence=detection.confidence if detection is not None else None,
+            landmarks=detection.landmarks if detection is not None else (),
+            candidates=[_candidate_metadata(candidate) for candidate in attempt.candidates],
+            tracking_target=detection.target if detection is not None else None,
+            motion=motion,
+            motion_error=motion_error,
         )
-        if sample is None:
-            return detection
-        return FaceDetection(
-            detection.target,
-            detection.box,
-            detection.confidence,
-            detection.landmarks,
-            sample.image_path,
-        )
+        return sample.image_path if sample is not None else None
 
-    def _notify_face_sample_saved(self, detection: FaceDetection) -> None:
-        if detection.sample_path is not None and self._on_face_sample_saved is not None:
-            self._on_face_sample_saved(detection.sample_path)
-
-    async def _look_at_normalized_target(self, target: tuple[float, float]) -> None:
+    async def _look_at_normalized_target(self, target: tuple[float, float]) -> dict[str, Any]:
         x, y = target
         yaw = max(-25.0, min(25.0, x * 25.0))
         pitch = max(-15.0, min(15.0, -y * 15.0))
+        command = {
+            "kind": "track_face",
+            "target": {"x": x, "y": y},
+            "yaw": yaw,
+            "pitch": pitch,
+            "duration": 0.25,
+            "method": "minjerk",
+        }
         async with self._motion_lock:
             await asyncio.to_thread(
-                self._mini.set_target,
+                self._mini.goto_target,
                 head=self._create_head_pose(yaw=yaw, pitch=pitch, degrees=True),
+                duration=command["duration"],
+                method=command["method"],
             )
+        return command
+
+    async def _look_at_rest(self) -> dict[str, Any]:
+        command = {
+            "kind": "no_face_rest",
+            "yaw": 0.0,
+            "pitch": 0.0,
+            "duration": 0.4,
+            "method": "minjerk",
+        }
+        async with self._motion_lock:
+            await asyncio.to_thread(
+                self._mini.goto_target,
+                head=self._create_head_pose(),
+                duration=command["duration"],
+                method=command["method"],
+            )
+        return command
 
     def _call_if_present(self, name: str) -> None:
         method = getattr(self._mini, name, None)
@@ -349,26 +420,41 @@ class FaceDetector:
             str(model_path),
             "",
             (320, 320),
-            confidence_threshold,
+            YUNET_RAW_SCORE_THRESHOLD,
             0.3,
             5000,
         )
 
     def detect(self, frame) -> FaceDetection | None:
+        return self.select_detection(self.detect_candidates(frame))
+
+    def detect_candidates(self, frame) -> list[FaceCandidate]:
         if frame is None:
-            return None
+            return []
         height, width = frame.shape[:2]
         self._detector.setInputSize((width, height))
         _, faces = self._detector.detect(frame)
         if faces is None or len(faces) == 0:
-            return None
-        detections = [
-            detection
+            return []
+        return [
+            candidate
             for face in faces
             if (
-                detection := _parse_yunet_face(
+                candidate := _parse_yunet_candidate(
                     face,
                     frame_shape=frame.shape,
+                )
+            )
+            is not None
+        ]
+
+    def select_detection(self, candidates: list[FaceCandidate]) -> FaceDetection | None:
+        detections = [
+            detection
+            for candidate in candidates
+            if (
+                detection := _candidate_to_detection(
+                    candidate,
                     confidence_threshold=self._confidence_threshold,
                     min_face_size_pixels=self._min_face_size_pixels,
                 )
@@ -689,20 +775,14 @@ def _smooth_target(
     )
 
 
-def _parse_yunet_face(
+def _parse_yunet_candidate(
     face,
     *,
     frame_shape: tuple[int, ...],
-    confidence_threshold: float,
-    min_face_size_pixels: int,
-) -> FaceDetection | None:
+) -> FaceCandidate | None:
     height, width = frame_shape[:2]
     x, y, box_width, box_height = (float(value) for value in face[:4])
     confidence = float(face[14])
-    if confidence < confidence_threshold:
-        return None
-    if box_width < min_face_size_pixels or box_height < min_face_size_pixels:
-        return None
 
     left = max(0, round(x))
     top = max(0, round(y))
@@ -719,12 +799,65 @@ def _parse_yunet_face(
         (float(face[index]), float(face[index + 1]))
         for index in range(4, 14, 2)
     )
-    return FaceDetection(
+    return FaceCandidate(
         target=((center_x - 0.5) * 2.0, (center_y - 0.5) * 2.0),
         box=(left, top, clipped_width, clipped_height),
         confidence=confidence,
         landmarks=landmarks,
     )
+
+
+def _candidate_to_detection(
+    candidate: FaceCandidate,
+    *,
+    confidence_threshold: float,
+    min_face_size_pixels: int,
+) -> FaceDetection | None:
+    if candidate.confidence < confidence_threshold:
+        return None
+    if candidate.box[2] < min_face_size_pixels or candidate.box[3] < min_face_size_pixels:
+        return None
+    return FaceDetection(
+        target=candidate.target,
+        box=candidate.box,
+        confidence=candidate.confidence,
+        landmarks=candidate.landmarks,
+    )
+
+
+def _parse_yunet_face(
+    face,
+    *,
+    frame_shape: tuple[int, ...],
+    confidence_threshold: float,
+    min_face_size_pixels: int,
+) -> FaceDetection | None:
+    candidate = _parse_yunet_candidate(face, frame_shape=frame_shape)
+    if candidate is None:
+        return None
+    return _candidate_to_detection(
+        candidate,
+        confidence_threshold=confidence_threshold,
+        min_face_size_pixels=min_face_size_pixels,
+    )
+
+
+def _candidate_metadata(candidate: FaceCandidate) -> dict[str, Any]:
+    return {
+        "box": _box_metadata(candidate.box),
+        "confidence": candidate.confidence,
+        "landmarks": _landmarks_metadata(candidate.landmarks),
+        "target": {"x": candidate.target[0], "y": candidate.target[1]},
+    }
+
+
+def _box_metadata(box: tuple[int, int, int, int]) -> dict[str, int]:
+    x, y, width, height = box
+    return {"x": x, "y": y, "width": width, "height": height}
+
+
+def _landmarks_metadata(landmarks: tuple[tuple[float, float], ...]) -> list[dict[str, float]]:
+    return [{"x": x, "y": y} for x, y in landmarks]
 
 
 def _verify_model_artifact(model_path: Path) -> None:

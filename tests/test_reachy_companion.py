@@ -8,12 +8,15 @@ import pytest
 from kitchen_agent import prepare_reachy_for_startup
 from reachy.companion import (
     DEFAULT_TRACKING_HZ,
+    FaceCandidate,
     FaceDetection,
     NoOpReachyCompanion,
     ReachyConfig,
     ReachyEmotion,
     RetryingReachyCompanion,
     SdkReachyCompanion,
+    _candidate_to_detection,
+    _candidate_metadata,
     _parse_yunet_face,
     _smooth_target,
     run_reachy_companion,
@@ -296,3 +299,82 @@ def test_parse_yunet_face_rejects_low_confidence_or_tiny_boxes():
 
     assert low_confidence is None
     assert tiny is None
+
+
+def test_raw_candidate_metadata_survives_threshold_rejection():
+    candidate = FaceCandidate(
+        target=(-0.3, -0.3),
+        box=(50, 20, 40, 30),
+        confidence=0.5,
+        landmarks=((60.0, 30.0),),
+    )
+
+    detection = _candidate_to_detection(
+        candidate,
+        confidence_threshold=0.8,
+        min_face_size_pixels=20,
+    )
+
+    assert detection is None
+    assert _candidate_metadata(candidate) == {
+        "box": {"x": 50, "y": 20, "width": 40, "height": 30},
+        "confidence": 0.5,
+        "landmarks": [{"x": 60.0, "y": 30.0}],
+        "target": {"x": -0.3, "y": -0.3},
+    }
+
+
+def test_parse_yunet_face_allows_edge_clipped_boxes_for_tracking():
+    detection = _parse_yunet_face(
+        [50, 2, 40, 30, 60, 8, 80, 8, 70, 20, 62, 25, 78, 25, 0.91],
+        frame_shape=(100, 200, 3),
+        confidence_threshold=0.8,
+        min_face_size_pixels=20,
+    )
+
+    assert detection is not None
+    assert detection.box == (50, 2, 40, 30)
+
+
+def test_face_tracking_uses_goto_target_for_head_motion():
+    mini = FakeMini()
+    companion = SdkReachyCompanion(
+        mini,
+        create_head_pose=fake_head_pose,
+        config=ReachyConfig(enabled=True, face_tracking_enabled=False),
+    )
+
+    asyncio.run(companion._look_at_normalized_target((0.5, -0.5)))
+
+    assert mini.calls == [
+        (
+            "goto_target",
+            {
+                "head": {"head_pose": {"yaw": 12.5, "pitch": 7.5, "degrees": True}},
+                "duration": 0.25,
+                "method": "minjerk",
+            },
+        )
+    ]
+
+
+def test_face_tracking_returns_to_rest_without_face():
+    mini = FakeMini()
+    companion = SdkReachyCompanion(
+        mini,
+        create_head_pose=fake_head_pose,
+        config=ReachyConfig(enabled=True, face_tracking_enabled=False),
+    )
+
+    asyncio.run(companion._look_at_rest())
+
+    assert mini.calls == [
+        (
+            "goto_target",
+            {
+                "head": {"head_pose": {}},
+                "duration": 0.4,
+                "method": "minjerk",
+            },
+        )
+    ]
