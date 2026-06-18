@@ -844,7 +844,7 @@ def _nudge_tracking_angles(
 ) -> tuple[float, float, float, float]:
     x, y = target
     current_yaw, current_pitch = current_angles
-    delta_yaw = 0.0 if abs(x) < deadband else x * yaw_step_degrees
+    delta_yaw = 0.0 if abs(x) < deadband else -x * yaw_step_degrees
     delta_pitch = 0.0 if abs(y) < deadband else y * pitch_step_degrees
     yaw = _clamp(current_yaw + delta_yaw, -max_yaw_degrees, max_yaw_degrees)
     pitch = _clamp(current_pitch + delta_pitch, -max_pitch_degrees, max_pitch_degrees)
