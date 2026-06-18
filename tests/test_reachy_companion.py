@@ -17,6 +17,7 @@ from reachy.companion import (
     SdkReachyCompanion,
     _candidate_to_detection,
     _candidate_metadata,
+    _nudge_tracking_angles,
     _parse_yunet_face,
     _should_rest_after_face_miss,
     _smooth_target,
@@ -345,13 +346,18 @@ def test_face_tracking_uses_goto_target_for_head_motion():
         config=ReachyConfig(enabled=True, face_tracking_enabled=False),
     )
 
-    asyncio.run(companion._look_at_normalized_target((0.5, 0.5)))
+    angles, motion = asyncio.run(companion._look_at_normalized_target((0.5, 0.5), (10.0, 5.0)))
 
+    assert angles == (12.0, 6.5)
+    assert motion["previous_yaw"] == 10.0
+    assert motion["previous_pitch"] == 5.0
+    assert motion["delta_yaw"] == 2.0
+    assert motion["delta_pitch"] == 1.5
     assert mini.calls == [
         (
             "goto_target",
             {
-                "head": {"head_pose": {"yaw": 12.5, "pitch": 7.5, "degrees": True}},
+                "head": {"head_pose": {"yaw": 12.0, "pitch": 6.5, "degrees": True}},
                 "duration": 0.25,
                 "method": "minjerk",
             },
@@ -367,14 +373,15 @@ def test_face_tracking_uses_negative_pitch_for_faces_high_in_frame():
         config=ReachyConfig(enabled=True, face_tracking_enabled=False),
     )
 
-    motion = asyncio.run(companion._look_at_normalized_target((0.0, -0.5)))
+    angles, motion = asyncio.run(companion._look_at_normalized_target((0.0, -0.5), (0.0, 0.0)))
 
-    assert motion["pitch"] == -7.5
+    assert angles == (0.0, -1.5)
+    assert motion["pitch"] == -1.5
     assert mini.calls == [
         (
             "goto_target",
             {
-                "head": {"head_pose": {"yaw": 0.0, "pitch": -7.5, "degrees": True}},
+                "head": {"head_pose": {"yaw": 0.0, "pitch": -1.5, "degrees": True}},
                 "duration": 0.25,
                 "method": "minjerk",
             },
@@ -423,3 +430,33 @@ def test_face_tracking_waits_before_resting_after_recent_face_miss():
         grace_seconds=5.0,
         already_resting=True,
     )
+
+
+def test_face_tracking_nudges_angles_with_deadband_and_limits():
+    assert _nudge_tracking_angles(
+        target=(0.5, -0.5),
+        current_angles=(10.0, -5.0),
+        deadband=0.08,
+        yaw_step_degrees=4.0,
+        pitch_step_degrees=3.0,
+        max_yaw_degrees=55.0,
+        max_pitch_degrees=30.0,
+    ) == (12.0, -6.5, 2.0, -1.5)
+    assert _nudge_tracking_angles(
+        target=(0.05, -0.05),
+        current_angles=(10.0, -5.0),
+        deadband=0.08,
+        yaw_step_degrees=4.0,
+        pitch_step_degrees=3.0,
+        max_yaw_degrees=55.0,
+        max_pitch_degrees=30.0,
+    ) == (10.0, -5.0, 0.0, 0.0)
+    assert _nudge_tracking_angles(
+        target=(1.0, -1.0),
+        current_angles=(54.0, -29.0),
+        deadband=0.08,
+        yaw_step_degrees=4.0,
+        pitch_step_degrees=3.0,
+        max_yaw_degrees=55.0,
+        max_pitch_degrees=30.0,
+    ) == (55.0, -30.0, 1.0, -1.0)

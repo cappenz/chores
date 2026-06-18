@@ -20,6 +20,11 @@ YUNET_RAW_SCORE_THRESHOLD = 0.0
 DEFAULT_FACE_CONFIDENCE_THRESHOLD = 0.8
 DEFAULT_MIN_FACE_SIZE_PIXELS = 40
 DEFAULT_FACE_MISS_GRACE_SECONDS = 5.0
+DEFAULT_FACE_TRACKING_DEADBAND = 0.08
+DEFAULT_FACE_TRACKING_YAW_STEP_DEGREES = 4.0
+DEFAULT_FACE_TRACKING_PITCH_STEP_DEGREES = 3.0
+DEFAULT_FACE_TRACKING_MAX_YAW_DEGREES = 55.0
+DEFAULT_FACE_TRACKING_MAX_PITCH_DEGREES = 30.0
 LOG_THROTTLE_SECONDS = 30.0
 YUNET_MODEL_PATH = Path(__file__).resolve().parent / "models" / "face_detection_yunet_2023mar.onnx"
 YUNET_MODEL_URL = (
@@ -73,6 +78,11 @@ class ReachyConfig:
     face_confidence_threshold: float = DEFAULT_FACE_CONFIDENCE_THRESHOLD
     min_face_size_pixels: int = DEFAULT_MIN_FACE_SIZE_PIXELS
     face_miss_grace_seconds: float = DEFAULT_FACE_MISS_GRACE_SECONDS
+    face_tracking_deadband: float = DEFAULT_FACE_TRACKING_DEADBAND
+    face_tracking_yaw_step_degrees: float = DEFAULT_FACE_TRACKING_YAW_STEP_DEGREES
+    face_tracking_pitch_step_degrees: float = DEFAULT_FACE_TRACKING_PITCH_STEP_DEGREES
+    face_tracking_max_yaw_degrees: float = DEFAULT_FACE_TRACKING_MAX_YAW_DEGREES
+    face_tracking_max_pitch_degrees: float = DEFAULT_FACE_TRACKING_MAX_PITCH_DEGREES
 
 
 @dataclass(frozen=True)
@@ -280,6 +290,7 @@ class SdkReachyCompanion:
     async def _face_tracking_loop(self) -> None:
         interval = 1.0 / max(self._config.tracking_hz, 1.0)
         smoothed: tuple[float, float] | None = None
+        tracking_angles = (0.0, 0.0)
         last_seen_at: float | None = None
         resting_after_miss = False
         try:
@@ -294,7 +305,10 @@ class SdkReachyCompanion:
                     resting_after_miss = False
                     smoothed = _smooth_target(smoothed, detection.target)
                     try:
-                        motion = await self._look_at_normalized_target(smoothed)
+                        tracking_angles, motion = await self._look_at_normalized_target(
+                            smoothed,
+                            tracking_angles,
+                        )
                     except Exception as error:
                         motion_error = str(error)
                 else:
@@ -306,6 +320,7 @@ class SdkReachyCompanion:
                     ):
                         smoothed = None
                         resting_after_miss = True
+                        tracking_angles = (0.0, 0.0)
                         try:
                             motion = await self._look_at_rest()
                         except Exception as error:
@@ -357,13 +372,28 @@ class SdkReachyCompanion:
         )
         return sample.image_path if sample is not None else None
 
-    async def _look_at_normalized_target(self, target: tuple[float, float]) -> dict[str, Any]:
-        x, y = target
-        yaw = max(-25.0, min(25.0, x * 25.0))
-        pitch = max(-15.0, min(15.0, y * 15.0))
+    async def _look_at_normalized_target(
+        self,
+        target: tuple[float, float],
+        current_angles: tuple[float, float],
+    ) -> tuple[tuple[float, float], dict[str, Any]]:
+        previous_yaw, previous_pitch = current_angles
+        yaw, pitch, delta_yaw, delta_pitch = _nudge_tracking_angles(
+            target=target,
+            current_angles=current_angles,
+            deadband=self._config.face_tracking_deadband,
+            yaw_step_degrees=self._config.face_tracking_yaw_step_degrees,
+            pitch_step_degrees=self._config.face_tracking_pitch_step_degrees,
+            max_yaw_degrees=self._config.face_tracking_max_yaw_degrees,
+            max_pitch_degrees=self._config.face_tracking_max_pitch_degrees,
+        )
         command = {
             "kind": "track_face",
-            "target": {"x": x, "y": y},
+            "target": {"x": target[0], "y": target[1]},
+            "previous_yaw": previous_yaw,
+            "previous_pitch": previous_pitch,
+            "delta_yaw": delta_yaw,
+            "delta_pitch": delta_pitch,
             "yaw": yaw,
             "pitch": pitch,
             "duration": 0.25,
@@ -376,7 +406,7 @@ class SdkReachyCompanion:
                 duration=command["duration"],
                 method=command["method"],
             )
-        return command
+        return (yaw, pitch), command
 
     async def _look_at_rest(self) -> dict[str, Any]:
         command = {
@@ -800,6 +830,29 @@ def _should_rest_after_face_miss(
     if last_seen_at is None:
         return True
     return now - last_seen_at >= grace_seconds
+
+
+def _nudge_tracking_angles(
+    *,
+    target: tuple[float, float],
+    current_angles: tuple[float, float],
+    deadband: float,
+    yaw_step_degrees: float,
+    pitch_step_degrees: float,
+    max_yaw_degrees: float,
+    max_pitch_degrees: float,
+) -> tuple[float, float, float, float]:
+    x, y = target
+    current_yaw, current_pitch = current_angles
+    delta_yaw = 0.0 if abs(x) < deadband else x * yaw_step_degrees
+    delta_pitch = 0.0 if abs(y) < deadband else y * pitch_step_degrees
+    yaw = _clamp(current_yaw + delta_yaw, -max_yaw_degrees, max_yaw_degrees)
+    pitch = _clamp(current_pitch + delta_pitch, -max_pitch_degrees, max_pitch_degrees)
+    return yaw, pitch, yaw - current_yaw, pitch - current_pitch
+
+
+def _clamp(value: float, minimum: float, maximum: float) -> float:
+    return max(minimum, min(maximum, value))
 
 
 def _parse_yunet_candidate(
