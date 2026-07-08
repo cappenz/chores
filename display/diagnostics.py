@@ -36,19 +36,19 @@ def format_diagnostics_lines(diagnostics: dict, *, face_sample_count: int = 0) -
     if reachy.get("state") == "disabled":
         sdk = {}
 
-    lines.extend(_section("Reachy", [
+    lines.extend(_lines([
         ("Reachy State", _clip(_format_reachy_summary(reachy))),
         ("Actuation", _clip(_format_actuation(sdk))),
     ]))
 
     audio = diagnostics.get("audio") or {}
-    lines.extend(_section("Audio", [
+    lines.extend(_lines([
         ("PyAudio default in", _clip(_format_audio_side(audio.get("input") or {}))),
         ("PyAudio default out", _clip(_format_audio_side(audio.get("output") or {}))),
     ]))
 
     models = diagnostics.get("models") or {}
-    lines.extend(_section("Models", [
+    lines.extend(_lines([
         ("Live model", _clip(_format_live_model(models))),
         ("Announcement TTS", _clip(_format_announcement_tts(models))),
     ]))
@@ -62,12 +62,12 @@ def format_diagnostics_lines(diagnostics: dict, *, face_sample_count: int = 0) -
     if status_title and status_title != "none":
         status_value = ui.get("status_value") or "none"
         speech_items.append(("Status", f"{status_title} / {status_value}"))
-    lines.extend(_section("Speech/UI", speech_items))
+    lines.extend(_lines(speech_items))
 
     app = diagnostics.get("app") or {}
     uptime = app.get("uptime_seconds")
     uptime_text = f"{uptime}s" if uptime is not None else "unknown"
-    lines.extend(_section("App", [
+    lines.extend(_lines([
         ("Uptime", uptime_text),
         ("Face samples", str(face_sample_count)),
     ]))
@@ -75,12 +75,8 @@ def format_diagnostics_lines(diagnostics: dict, *, face_sample_count: int = 0) -
     return lines
 
 
-def _section(title: str, items: list[tuple[str, str]]) -> list[str]:
-    lines = [title]
-    for label, value in items:
-        lines.append(f"  {label}: {value}")
-    lines.append("")
-    return lines
+def _lines(items: list[tuple[str, str]]) -> list[str]:
+    return [f"{label}: {value}" for label, value in items]
 
 
 def _clip(text: str, max_len: int = CLIP_MAX_LEN) -> str:
@@ -194,8 +190,22 @@ class DiagnosticsScreen(tk.Frame):
         outer = tk.Frame(self, bg=BACKGROUND, padx=OUTER_PADDING, pady=OUTER_PADDING)
         outer.pack(fill="both", expand=True)
 
+        toolbar = tk.Frame(outer, bg=BACKGROUND)
+        toolbar.pack(fill="x")
+
+        tk.Button(
+            toolbar,
+            text="Close",
+            font=("Helvetica", 24),
+            bg=BACKGROUND,
+            fg="#333333",
+            relief=tk.FLAT,
+            borderwidth=0,
+            command=self._on_close,
+        ).pack(side=tk.LEFT, anchor="nw")
+
         content = tk.Frame(outer, bg=BACKGROUND)
-        content.pack(fill="both", expand=True)
+        content.pack(fill="both", expand=True, pady=(20, 0))
         content.columnconfigure(0, weight=0, minsize=LEFT_COLUMN_MINSIZE)
         content.columnconfigure(1, weight=1, minsize=400)
         content.rowconfigure(0, weight=1)
@@ -207,7 +217,7 @@ class DiagnosticsScreen(tk.Frame):
             fg="#333333",
             wrap="none",
             width=TEXT_WIDTH_CHARS,
-            height=35,
+            height=28,
             relief=tk.FLAT,
             borderwidth=0,
             highlightthickness=0,
@@ -225,20 +235,6 @@ class DiagnosticsScreen(tk.Frame):
             fg="#666666",
             anchor="n",
         )
-
-        footer = tk.Frame(outer, bg=BACKGROUND)
-        footer.pack(fill="x", pady=(20, 0))
-
-        tk.Button(
-            footer,
-            text="Close",
-            font=("Helvetica", 24),
-            bg=BACKGROUND,
-            fg="#333333",
-            relief=tk.FLAT,
-            borderwidth=0,
-            command=self._on_close,
-        ).pack(side=tk.LEFT, anchor="sw")
 
     def refresh(self, diagnostics: dict, face_paths: list[Path]) -> None:
         lines = format_diagnostics_lines(diagnostics, face_sample_count=len(face_paths))

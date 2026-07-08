@@ -17,7 +17,7 @@ from speech_agent.audio import get_audio_device_diagnostics
 from speech_agent.live import get_live_model_diagnostics
 
 
-def test_format_diagnostics_lines_includes_sections_and_labels():
+def test_format_diagnostics_lines_includes_labels_without_headers():
     diagnostics = {
         "app": {"uptime_seconds": 45.2},
         "ui": {
@@ -49,7 +49,8 @@ def test_format_diagnostics_lines_includes_sections_and_labels():
         },
     }
 
-    text = "\n".join(format_diagnostics_lines(diagnostics, face_sample_count=2))
+    lines = format_diagnostics_lines(diagnostics, face_sample_count=2)
+    text = "\n".join(lines)
 
     assert "Reachy State: connected | daemon running v1.7.3 | awake=yes | retrying=no" in text
     assert "Actuation: ready=yes, last_alive=" in text
@@ -61,6 +62,11 @@ def test_format_diagnostics_lines_includes_sections_and_labels():
     assert "Status: Timer / 03:12" in text
     assert "Uptime: 45.2s" in text
     assert "Face samples: 2" in text
+    assert "Reachy" not in lines
+    assert "Audio" not in lines
+    assert "Models" not in lines
+    assert "Speech/UI" not in lines
+    assert "App" not in lines
     assert "Daemon State" not in text
     assert "PID:" not in text
 
@@ -87,7 +93,7 @@ def test_format_diagnostics_lines_clips_long_values():
         "audio": {"input": {"name": long_name, "index": 1, "channels": 1, "sample_rate": 16000.0}},
     }))
 
-    line = next(line for line in text.splitlines() if line.startswith("  PyAudio default in:"))
+    line = next(line for line in text.splitlines() if line.startswith("PyAudio default in:"))
     assert line.endswith("…")
     assert len(line.split(": ", 1)[1]) == 80
 
