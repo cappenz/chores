@@ -37,7 +37,8 @@ def test_build_daemon_argv_real(daemon_config: DaemonConfig) -> None:
 
     assert argv[0] == "/opt/homebrew/bin/uv"
     assert "reachy_mini.daemon.app.main" in argv
-    assert "--localhost-only" in argv
+    assert argv[argv.index("--fastapi-host") + 1] == "127.0.0.1"
+    assert "--localhost-only" not in argv
     assert "--sim" not in argv
     assert str(daemon_config.log_dir / "reachy-daemon.log") in argv
 
