@@ -103,7 +103,7 @@ def test_timer_tool_accepts_duration_and_name():
 
 
 def test_speech_agent_uses_schedar_voice():
-    config = _build_config("gemini-3.1-flash-live-preview")
+    config = _build_config("gemini-3.8-live")
 
     assert config["speech_config"]["voice_config"]["prebuilt_voice_config"]["voice_name"] == "Schedar"
 

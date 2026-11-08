@@ -18,8 +18,8 @@ from speech_agent.tools import SpeechChoresApi, build_tools, handle_tool_call
 
 MIC_MIME = "audio/pcm;rate=16000"
 LIVE_MODELS = (
+    "gemini-3.8-live",
     "gemini-3.1-flash-live-preview",
-    "gemini-2.5-flash-native-audio-preview-12-2025",
 )
 _active_live_model: str | None = None
 
@@ -434,8 +434,6 @@ def _build_config(model: str) -> dict:
         "input_audio_transcription": {},
         "output_audio_transcription": {},
     }
-    if "2.5-flash-native-audio-preview" in model:
-        config["proactivity"] = {"proactive_audio": True}
     return config
 
 

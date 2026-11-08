@@ -28,8 +28,8 @@ def test_format_diagnostics_lines_includes_labels_without_headers():
         },
         "models": {
             "active": None,
-            "primary": "gemini-3.1-flash-live-preview",
-            "fallback": "gemini-2.5-flash-native-audio-preview-12-2025",
+            "primary": "gemini-3.8-live",
+            "fallback": "gemini-3.1-flash-live-preview",
             "announcement_tts": "eleven_multilingual_v2",
         },
         "reachy": {
@@ -81,10 +81,10 @@ def test_format_diagnostics_lines_omits_status_when_idle():
 
 def test_format_diagnostics_lines_shows_active_live_model():
     text = "\n".join(format_diagnostics_lines({
-        "models": {"active": "gemini-3.1-flash-live-preview"},
+        "models": {"active": "gemini-3.8-live"},
     }))
 
-    assert "Live model: gemini-3.1-flash-live-preview" in text
+    assert "Live model: gemini-3.8-live" in text
 
 
 def test_format_diagnostics_lines_clips_long_values():
@@ -119,8 +119,8 @@ def test_get_live_model_diagnostics_includes_primary_and_fallback():
     result = get_live_model_diagnostics()
 
     assert result["active"] is None
-    assert result["primary"] == "gemini-3.1-flash-live-preview"
-    assert result["fallback"] == "gemini-2.5-flash-native-audio-preview-12-2025"
+    assert result["primary"] == "gemini-3.8-live"
+    assert result["fallback"] == "gemini-3.1-flash-live-preview"
 
 
 def test_load_face_sample_metadata_reads_adjacent_json(tmp_path: Path):
