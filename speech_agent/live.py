@@ -34,7 +34,10 @@ def get_live_model_diagnostics() -> dict:
 STOP_LISTENING_PHRASES = ("goodbye", "stop listening")
 VOICE_NAME = "Schedar"
 GEMINI_SESSION_CLOSE_TIMEOUT_SECONDS = 2.0
+COMPRESSION_TRIGGER_TOKENS = 25_000
+COMPRESSION_TARGET_TOKENS = 12_000
 ConnectionCallback = Callable[[bool], Awaitable[None] | None]
+ReconnectCallback = Callable[[str], Awaitable[object]]
 TextCallback = Callable[[str], Awaitable[None] | None]
 TimerActiveCallback = Callable[[], bool]
 INITIAL_GREETING_PROMPT = "Greet the family now. Say only: Hello!"
@@ -88,8 +91,11 @@ class AudioLoop:
         on_assistant_response_text: TextCallback | None = None,
         assistant_events: asyncio.Queue[AssistantEvent] | None = None,
         timer_active: TimerActiveCallback | None = None,
+        reconnect: ReconnectCallback | None = None,
     ) -> None:
         self.session = session
+        self.reconnect = reconnect
+        self._resumption_handle: str | None = None
         self.chores = chores
         self.debug = debug
         self.input_device_index = input_device_index
@@ -195,10 +201,21 @@ class AudioLoop:
         genai_types = _genai_types()
         while True:
             sent_tool_response = False
+            reconnected = False
             async for response in self.session.receive():
+                update = getattr(response, "session_resumption_update", None)
+                if update and update.resumable and update.new_handle:
+                    self._resumption_handle = update.new_handle
+
                 if getattr(response, "go_away", None):
-                    self.stop_reason = "Gemini Live session duration reached"
-                    raise ListeningComplete()
+                    if self.reconnect is None or self._resumption_handle is None:
+                        self.stop_reason = "Gemini Live session duration reached"
+                        raise ListeningComplete()
+                    print("\n[listening] Gemini connection ending; resuming session.", flush=True)
+                    async with self._session_send_lock:
+                        self.session = await self.reconnect(self._resumption_handle)
+                    reconnected = True
+                    break
 
                 if response.tool_call and response.tool_call.function_calls:
                     function_responses = []
@@ -254,7 +271,7 @@ class AudioLoop:
                         self._mic_send_silence = False
                         await self._set_assistant_speaking(False)
 
-            if sent_tool_response:
+            if sent_tool_response or reconnected:
                 continue
             self._mic_send_silence = False
 
@@ -362,7 +379,7 @@ async def run_live(
     for model in LIVE_MODELS:
         try:
             print(f"Connecting with model: {model}", flush=True)
-            session_context = client.aio.live.connect(model=model, config=_build_config(model))
+            session_context = client.aio.live.connect(model=model, config=_build_config())
             session = await session_context.__aenter__()
             _active_live_model = model
             break
@@ -376,6 +393,15 @@ async def run_live(
             print(f"Model {model!r} failed ({error!r}); trying fallback.", flush=True)
     if session is None:
         raise RuntimeError("No Live session established.") from last_error
+
+    async def reconnect(handle: str):
+        nonlocal session_context
+        new_context = client.aio.live.connect(model=_active_live_model, config=_build_config(handle))
+        new_session = await new_context.__aenter__()
+        old_context, session_context = session_context, new_context
+        await _close_session_context(old_context, None)
+        return new_session
+
     try:
         await _notify_connection(on_connection_active, True)
         connection_marked_active = True
@@ -391,6 +417,7 @@ async def run_live(
             on_assistant_response_text=on_assistant_response_text,
             assistant_events=assistant_events,
             timer_active=timer_active,
+            reconnect=reconnect,
         )
         try:
             await loop.run()
@@ -403,23 +430,24 @@ async def run_live(
     finally:
         _active_live_model = None
         if session_context is not None:
-            try:
-                await asyncio.wait_for(
-                    session_context.__aexit__(
-                        type(exit_error) if exit_error else None,
-                        exit_error,
-                        exit_error.__traceback__ if exit_error else None,
-                    ),
-                    timeout=GEMINI_SESSION_CLOSE_TIMEOUT_SECONDS,
-                )
-            except TimeoutError:
-                print(
-                    "[listening] Gemini session close timed out; returning to wake-word mode.",
-                    flush=True,
-                )
+            await _close_session_context(session_context, exit_error)
 
 
-def _build_config(model: str) -> dict:
+async def _close_session_context(session_context, error: BaseException | None) -> None:
+    try:
+        await asyncio.wait_for(
+            session_context.__aexit__(
+                type(error) if error else None,
+                error,
+                error.__traceback__ if error else None,
+            ),
+            timeout=GEMINI_SESSION_CLOSE_TIMEOUT_SECONDS,
+        )
+    except TimeoutError:
+        print("[listening] Gemini session close timed out.", flush=True)
+
+
+def _build_config(resumption_handle: str | None = None) -> dict:
     config: dict = {
         "system_instruction": SYSTEM_INSTRUCTION,
         "response_modalities": ["AUDIO"],
@@ -433,6 +461,11 @@ def _build_config(model: str) -> dict:
         },
         "input_audio_transcription": {},
         "output_audio_transcription": {},
+        "context_window_compression": {
+            "trigger_tokens": COMPRESSION_TRIGGER_TOKENS,
+            "sliding_window": {"target_tokens": COMPRESSION_TARGET_TOKENS},
+        },
+        "session_resumption": {"handle": resumption_handle},
     }
     return config
 

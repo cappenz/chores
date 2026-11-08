@@ -110,3 +110,53 @@ def test_goaway_returns_to_wake_word_mode(monkeypatch):
     monkeypatch.setattr("speech_agent.live._genai_types", lambda: object())
 
     assert asyncio.run(scenario()) == "Gemini Live session duration reached"
+
+
+def test_goaway_resumes_session_with_latest_handle(monkeypatch):
+    update = SimpleNamespace(resumable=True, new_handle="handle-2")
+
+    class FirstSession:
+        def receive(self):
+            async def responses():
+                yield SimpleNamespace(session_resumption_update=update, go_away=None, tool_call=None, data=None, text=None, server_content=None)
+                yield SimpleNamespace(go_away=object())
+
+            return responses()
+
+    class ResumedSession:
+        def receive(self):
+            async def responses():
+                raise ListeningComplete()
+                yield
+
+            return responses()
+
+    resumed = ResumedSession()
+    handles = []
+
+    async def reconnect(handle: str):
+        handles.append(handle)
+        return resumed
+
+    async def scenario():
+        loop = AudioLoop(
+            FirstSession(),
+            FakeChores(),
+            debug=False,
+            input_device_index=None,
+            output_device_index=None,
+            idle_timeout_seconds=300.0,
+            reconnect=reconnect,
+        )
+        loop.audio_in_queue = asyncio.Queue()
+        try:
+            await loop.receive_audio()
+        except ListeningComplete:
+            return loop.session
+        raise AssertionError("expected ListeningComplete")
+
+    monkeypatch.setattr("speech_agent.live._pyaudio", lambda: FakePyAudioModule)
+    monkeypatch.setattr("speech_agent.live._genai_types", lambda: object())
+
+    assert asyncio.run(scenario()) is resumed
+    assert handles == ["handle-2"]

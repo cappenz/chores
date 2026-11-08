@@ -41,6 +41,8 @@ The `speech_agent/` directory owns the wake-word-gated Gemini Live assistant. It
 - Plays 24 kHz Gemini audio output.
 - Sends silence upstream while model audio is playing to reduce echo.
 - Handles tool calls and transcripts.
+- Enables context window compression (sliding window) so sessions are not capped at 15 minutes and re-billed context stays bounded.
+- Enables session resumption. On a Gemini `go_away`, reconnects with the latest resumption handle and keeps the same mic/speaker loop; without a handle it returns to wake-word mode.
 
 The speech agent is the only component that should own the microphone.
 

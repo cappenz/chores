@@ -103,9 +103,17 @@ def test_timer_tool_accepts_duration_and_name():
 
 
 def test_speech_agent_uses_schedar_voice():
-    config = _build_config("gemini-3.8-live")
+    config = _build_config()
 
     assert config["speech_config"]["voice_config"]["prebuilt_voice_config"]["voice_name"] == "Schedar"
+
+
+def test_live_config_enables_compression_and_resumption():
+    config = _build_config("handle-1")
+
+    assert config["context_window_compression"]["trigger_tokens"] > config["context_window_compression"]["sliding_window"]["target_tokens"]
+    assert config["session_resumption"] == {"handle": "handle-1"}
+    assert _build_config()["session_resumption"] == {"handle": None}
 
 
 def test_initial_greeting_prompts_model_to_speak():
